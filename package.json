@@ -1,0 +1,22 @@
+{
+  "name": "guardian-gate-minigame",
+  "version": "0.1.0",
+  "private": true,
+  "description": "今天也没守住微信小游戏独立版本",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/check-project.mjs",
+    "test": "node scripts/test-simulation.mjs && npm run test:campaign",
+    "test:campaign": "node -e \"const e=require('esbuild'),f=require('node:fs');const o='.tmp/campaign-storage-smoke.cjs';f.mkdirSync('.tmp',{recursive:true});try{e.buildSync({entryPoints:['scripts/campaign-storage-smoke.ts'],outfile:o,bundle:true,platform:'node',format:'cjs',target:['node20']});require('./'+o)}finally{f.rmSync(o,{force:true})}\"",
+    "qa": "npm run typecheck && npm run build && npm run check && npm run test",
+    "dev": "npm run build && \"/Applications/wechatwebdevtools.app/Contents/MacOS/cli\" open --project \"$PWD\" --lang zh"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  }
+}

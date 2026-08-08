@@ -1,0 +1,47 @@
+{
+  "appid": "wx8974543fbed2101b",
+  "compileType": "minigame",
+  "libVersion": "3.8.10",
+  "projectname": "今天也没守住",
+  "description": "今天也没守住微信小游戏独立版",
+  "miniprogramRoot": "dist/",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": false,
+    "minified": false,
+    "uglifyFileName": false,
+    "checkInvalidKey": true,
+    "checkSiteMap": false,
+    "coverView": true,
+    "useApiHook": true,
+    "useApiHostProcess": true,
+    "useStaticServer": true,
+    "useLanDebug": false,
+    "minifyWXML": true,
+    "compileWorklet": false,
+    "uploadWithSourceMap": true,
+    "packNpmManually": false,
+    "packNpmRelationList": [],
+    "minifyWXSS": true,
+    "localPlugins": false,
+    "disableUseStrict": false,
+    "useCompilerPlugins": false,
+    "condition": false,
+    "swc": false,
+    "disableSWC": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "condition": {},
+  "simulatorPluginLibVersion": {},
+  "packOptions": {
+    "ignore": [],
+    "include": []
+  },
+  "isGameTourist": false,
+  "editorSetting": {}
+}
