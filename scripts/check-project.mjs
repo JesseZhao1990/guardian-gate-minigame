@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const expectedStageIds = ['STAGE_01', 'STAGE_02', 'STAGE_03', 'STAGE_04', 'STAGE_05', 'STAGE_06'];
+const expectedStageIds = ['STAGE_01', 'STAGE_02', 'STAGE_03', 'STAGE_04', 'STAGE_05', 'STAGE_06', 'STAGE_07'];
 const requiredFiles = [
   'project.config.json',
   'dist/game.js',
@@ -17,6 +17,7 @@ const requiredFiles = [
   'dist/assets/stage-04/background/STAGE_04_BACKGROUND.jpg',
   'dist/assets/stage-05/background/STAGE_05_BACKGROUND.jpg',
   'dist/assets/stage-06/background/STAGE_06_BACKGROUND.jpg',
+  'dist/assets/stage-07/background/STAGE_07_BACKGROUND.jpg',
   'dist/assets/stage-01/enemies/MON_SWIFT_EEL_BATTLE_V2.png',
   'dist/assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
   'dist/assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
@@ -24,6 +25,7 @@ const requiredFiles = [
   'dist/assets/stage-04/enemies/MON_ABYSS_WYRM.png',
   'dist/assets/stage-05/enemies/MON_ECLIPSE_KUN_EMPEROR.png',
   'dist/assets/stage-06/enemies/MON_MIRAGE_MOTHER.png',
+  'dist/assets/stage-07/enemies/MON_DUAL_PHASE_BOOK_MOTH.png',
   'dist/assets/stage-01/towers/TOWER_SOLAR_BASE_V2.png',
   'dist/assets/stage-01/towers/TOWER_SOLAR_HEAD_V2.png',
   'dist/assets/stage-01/towers/TOWER_FROST_BASE_V2.png',
@@ -97,6 +99,7 @@ for (const background of [
   'dist/assets/stage-04/background/STAGE_04_BACKGROUND.jpg',
   'dist/assets/stage-05/background/STAGE_05_BACKGROUND.jpg',
   'dist/assets/stage-06/background/STAGE_06_BACKGROUND.jpg',
+  'dist/assets/stage-07/background/STAGE_07_BACKGROUND.jpg',
 ]) {
   const runtimePath = background.replace(/^dist\//, '');
   if (!gameSource.includes(runtimePath)) throw new Error(`运行时代码未引用关卡背景：${runtimePath}`);
@@ -115,6 +118,7 @@ for (const [bossSpritePath, bossName] of [
   ['dist/assets/stage-04/enemies/MON_ABYSS_WYRM.png', '第四关噬潮魔蛟'],
   ['dist/assets/stage-05/enemies/MON_ECLIPSE_KUN_EMPEROR.png', '第五关蚀日鲲皇'],
   ['dist/assets/stage-06/enemies/MON_MIRAGE_MOTHER.png', '第六关万相蜃母'],
+  ['dist/assets/stage-07/enemies/MON_DUAL_PHASE_BOOK_MOTH.png', '第七关双相天蠹'],
 ]) {
   const bossSprite = await readFile(resolve(root, bossSpritePath));
   if (bossSprite.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
@@ -157,11 +161,11 @@ const includesJavaScriptString = (source, value) => {
     .join('');
   return source.includes(value) || source.toLowerCase().includes(escaped.toLowerCase());
 };
-if (project.compileType !== 'minigame') throw new Error('compileType 必须为 minigame');
+if (project.compileType !== 'game') throw new Error('微信小游戏 compileType 必须为 game');
 if (project.miniprogramRoot !== 'dist/') throw new Error('miniprogramRoot 必须指向 dist/');
 if (buildMeta.entry !== 'src/game.ts') throw new Error('构建元数据未声明正式 src/game.ts 入口');
 if (JSON.stringify(buildMeta.stageIds) !== JSON.stringify(expectedStageIds)) {
-  throw new Error('构建元数据未声明完整且有序的六关关卡列表');
+  throw new Error('构建元数据未声明完整且有序的七关关卡列表');
 }
 
 const formalBuild = await build({
@@ -215,8 +219,8 @@ console.log('✓ 微信小游戏入口与配置完整');
 console.log(`✓ 游戏名「${expectedGameTitle}」已写入首页、工程配置与微信分享链路`);
 console.log('✓ 横屏与独立 dist 根目录配置正确');
 console.log('✓ 三套塔基与动态弩机素材完整、透明且已接入运行时');
-console.log('✓ Stage 01/02/03/04/05/06 独立战场背景均为 1920×1080 JPEG 且已接入运行时');
-console.log('✓ 第三至第六关独立首领均为 600×480 透明素材且已接入运行时');
+console.log('✓ Stage 01/02/03/04/05/06/07 独立战场背景均为 1920×1080 JPEG 且已接入运行时');
+console.log('✓ 第三至第七关独立首领均为 600×480 透明素材且已接入运行时');
 console.log('✓ dist/game.js 与当前正式 src/game.ts 内存构建逐字节一致');
 console.log('✓ 循环背景音与环境音已从产物移除');
 console.log(`✓ dist 包体 ${(totalBytes / 1024 / 1024).toFixed(2)} MiB`);

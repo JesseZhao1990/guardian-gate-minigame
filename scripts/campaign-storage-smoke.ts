@@ -102,6 +102,7 @@ assert.equal(selectCampaignStage(initial, 'STAGE_03', 102).selectedStageId, 'STA
 assert.equal(selectCampaignStage(initial, 'STAGE_04', 103).selectedStageId, 'STAGE_01');
 assert.equal(selectCampaignStage(initial, 'STAGE_05', 104).selectedStageId, 'STAGE_01');
 assert.equal(selectCampaignStage(initial, 'STAGE_06', 105).selectedStageId, 'STAGE_01');
+assert.equal(selectCampaignStage(initial, 'STAGE_07', 106).selectedStageId, 'STAGE_01');
 
 const afterStage01 = completeCampaignStage(initial, 'STAGE_01', 200);
 assert.deepEqual(afterStage01.unlockedStageIds, ['STAGE_01', 'STAGE_02']);
@@ -147,7 +148,15 @@ assert.deepEqual(afterStage05.completedStageIds, [
 const selectedStage06 = selectCampaignStage(afterStage05, 'STAGE_06', 213);
 assert.equal(selectedStage06.selectedStageId, 'STAGE_06');
 const afterStage06 = completeCampaignStage(selectedStage06, 'STAGE_06', 214);
-assert.deepEqual(afterStage06.unlockedStageIds, afterStage05.unlockedStageIds);
+assert.deepEqual(afterStage06.unlockedStageIds, [
+  'STAGE_01',
+  'STAGE_02',
+  'STAGE_03',
+  'STAGE_04',
+  'STAGE_05',
+  'STAGE_06',
+  'STAGE_07',
+]);
 assert.deepEqual(afterStage06.completedStageIds, [
   'STAGE_01',
   'STAGE_02',
@@ -156,12 +165,26 @@ assert.deepEqual(afterStage06.completedStageIds, [
   'STAGE_05',
   'STAGE_06',
 ]);
+const selectedStage07 = selectCampaignStage(afterStage06, 'STAGE_07', 215);
+assert.equal(selectedStage07.selectedStageId, 'STAGE_07');
+const afterStage07 = completeCampaignStage(selectedStage07, 'STAGE_07', 216);
+assert.deepEqual(afterStage07.unlockedStageIds, afterStage06.unlockedStageIds);
+assert.deepEqual(afterStage07.completedStageIds, [
+  'STAGE_01',
+  'STAGE_02',
+  'STAGE_03',
+  'STAGE_04',
+  'STAGE_05',
+  'STAGE_06',
+  'STAGE_07',
+]);
 assert.equal(nextStageId('STAGE_01'), 'STAGE_02');
 assert.equal(nextStageId('STAGE_02'), 'STAGE_03');
 assert.equal(nextStageId('STAGE_03'), 'STAGE_04');
 assert.equal(nextStageId('STAGE_04'), 'STAGE_05');
 assert.equal(nextStageId('STAGE_05'), 'STAGE_06');
-assert.equal(nextStageId('STAGE_06'), undefined);
+assert.equal(nextStageId('STAGE_06'), 'STAGE_07');
+assert.equal(nextStageId('STAGE_07'), undefined);
 
 const migratedThreeStageCompletion = normalizeCampaignProgress({
   schemaVersion: 1,
@@ -219,6 +242,32 @@ assert.deepEqual(migratedFiveStageCompletion.completedStageIds, [
 ]);
 assert.equal(migratedFiveStageCompletion.selectedStageId, 'STAGE_05');
 
+const migratedSixStageCompletion = normalizeCampaignProgress({
+  schemaVersion: 1,
+  unlockedStageIds: ['STAGE_01', 'STAGE_02', 'STAGE_03', 'STAGE_04', 'STAGE_05', 'STAGE_06'],
+  completedStageIds: ['STAGE_01', 'STAGE_02', 'STAGE_03', 'STAGE_04', 'STAGE_05', 'STAGE_06'],
+  selectedStageId: 'STAGE_06',
+  updatedAt: 211,
+});
+assert.deepEqual(migratedSixStageCompletion.unlockedStageIds, [
+  'STAGE_01',
+  'STAGE_02',
+  'STAGE_03',
+  'STAGE_04',
+  'STAGE_05',
+  'STAGE_06',
+  'STAGE_07',
+]);
+assert.deepEqual(migratedSixStageCompletion.completedStageIds, [
+  'STAGE_01',
+  'STAGE_02',
+  'STAGE_03',
+  'STAGE_04',
+  'STAGE_05',
+  'STAGE_06',
+]);
+assert.equal(migratedSixStageCompletion.selectedStageId, 'STAGE_06');
+
 const impossibleProgress = normalizeCampaignProgress({
   schemaVersion: 1,
   unlockedStageIds: ['STAGE_02', 'BROKEN_STAGE'],
@@ -240,18 +289,21 @@ const stage03Save = savedBattleV2('STAGE_03', 'hash-stage-03', 333);
 const stage04Save = savedBattleV2('STAGE_04', 'hash-stage-04', 444);
 const stage05Save = savedBattleV2('STAGE_05', 'hash-stage-05', 555);
 const stage06Save = savedBattleV2('STAGE_06', 'hash-stage-06', 666);
+const stage07Save = savedBattleV2('STAGE_07', 'hash-stage-07', 777);
 saveStore.save(stage01Save);
 saveStore.save(stage02Save);
 saveStore.save(stage03Save);
 saveStore.save(stage04Save);
 saveStore.save(stage05Save);
 saveStore.save(stage06Save);
+saveStore.save(stage07Save);
 assert.deepEqual(saveStore.load('STAGE_01', 'hash-stage-01'), stage01Save);
 assert.deepEqual(saveStore.load('STAGE_02', 'hash-stage-02'), stage02Save);
 assert.deepEqual(saveStore.load('STAGE_03', 'hash-stage-03'), stage03Save);
 assert.deepEqual(saveStore.load('STAGE_04', 'hash-stage-04'), stage04Save);
 assert.deepEqual(saveStore.load('STAGE_05', 'hash-stage-05'), stage05Save);
 assert.deepEqual(saveStore.load('STAGE_06', 'hash-stage-06'), stage06Save);
+assert.deepEqual(saveStore.load('STAGE_07', 'hash-stage-07'), stage07Save);
 assert.equal(saveStore.load('STAGE_01', 'hash-stage-02'), undefined);
 assert.equal(saveStore.load('STAGE_02', 'hash-stage-01'), undefined);
 assert.equal(saveStore.load('STAGE_03', 'hash-stage-02'), undefined);
@@ -260,6 +312,8 @@ assert.equal(saveStore.load('STAGE_05', 'hash-stage-04'), undefined);
 assert.equal(saveStore.load('STAGE_04', 'hash-stage-05'), undefined);
 assert.equal(saveStore.load('STAGE_06', 'hash-stage-05'), undefined);
 assert.equal(saveStore.load('STAGE_05', 'hash-stage-06'), undefined);
+assert.equal(saveStore.load('STAGE_07', 'hash-stage-06'), undefined);
+assert.equal(saveStore.load('STAGE_06', 'hash-stage-07'), undefined);
 
 saveStore.clear('STAGE_02');
 assert.deepEqual(saveStore.load('STAGE_01', 'hash-stage-01'), stage01Save);
@@ -268,6 +322,7 @@ assert.deepEqual(saveStore.load('STAGE_03', 'hash-stage-03'), stage03Save);
 assert.deepEqual(saveStore.load('STAGE_04', 'hash-stage-04'), stage04Save);
 assert.deepEqual(saveStore.load('STAGE_05', 'hash-stage-05'), stage05Save);
 assert.deepEqual(saveStore.load('STAGE_06', 'hash-stage-06'), stage06Save);
+assert.deepEqual(saveStore.load('STAGE_07', 'hash-stage-07'), stage07Save);
 
 saveStore.clear('STAGE_03');
 assert.deepEqual(saveStore.load('STAGE_01', 'hash-stage-01'), stage01Save);
@@ -275,23 +330,30 @@ assert.equal(saveStore.load('STAGE_03', 'hash-stage-03'), undefined);
 assert.deepEqual(saveStore.load('STAGE_04', 'hash-stage-04'), stage04Save);
 assert.deepEqual(saveStore.load('STAGE_05', 'hash-stage-05'), stage05Save);
 assert.deepEqual(saveStore.load('STAGE_06', 'hash-stage-06'), stage06Save);
+assert.deepEqual(saveStore.load('STAGE_07', 'hash-stage-07'), stage07Save);
 
 saveStore.clear('STAGE_04');
 assert.deepEqual(saveStore.load('STAGE_01', 'hash-stage-01'), stage01Save);
 assert.equal(saveStore.load('STAGE_04', 'hash-stage-04'), undefined);
 assert.deepEqual(saveStore.load('STAGE_05', 'hash-stage-05'), stage05Save);
 assert.deepEqual(saveStore.load('STAGE_06', 'hash-stage-06'), stage06Save);
+assert.deepEqual(saveStore.load('STAGE_07', 'hash-stage-07'), stage07Save);
 
 saveStore.clear('STAGE_06');
 assert.equal(saveStore.load('STAGE_06', 'hash-stage-06'), undefined);
 assert.deepEqual(saveStore.load('STAGE_05', 'hash-stage-05'), stage05Save);
+assert.deepEqual(saveStore.load('STAGE_07', 'hash-stage-07'), stage07Save);
 saveStore.save(stage06Save);
 saveStore.clear('STAGE_05');
 assert.deepEqual(saveStore.load('STAGE_01', 'hash-stage-01'), stage01Save);
 assert.equal(saveStore.load('STAGE_05', 'hash-stage-05'), undefined);
 assert.deepEqual(saveStore.load('STAGE_06', 'hash-stage-06'), stage06Save);
+assert.deepEqual(saveStore.load('STAGE_07', 'hash-stage-07'), stage07Save);
 saveStore.clear('STAGE_06');
 assert.equal(saveStore.load('STAGE_06', 'hash-stage-06'), undefined);
+assert.deepEqual(saveStore.load('STAGE_07', 'hash-stage-07'), stage07Save);
+saveStore.clear('STAGE_07');
+assert.equal(saveStore.load('STAGE_07', 'hash-stage-07'), undefined);
 
 storage.set('guardian-gate:minigame:battle:STAGE_02:confirmed:v2', {
   ...stage02Save,
@@ -325,5 +387,5 @@ saveStore.clear('STAGE_01');
 assert.equal(saveStore.load('STAGE_01', 'legacy-stage-01-hash'), undefined);
 
 console.log('✓ 战役默认、选关、通关解锁与持久化通过');
-console.log('✓ Stage 01/02/03/04/05/06 存档分槽、校验与 clear 隔离通过');
+console.log('✓ Stage 01/02/03/04/05/06/07 存档分槽、校验与 clear 隔离通过');
 console.log('✓ V1 旧存档仅迁移到 Stage 01 且 V1 API 保持兼容');

@@ -21,6 +21,8 @@ const STAGE_05_RELEASE_ID = 'GG_S05_ALPHA_V1';
 const STAGE_05_CONFIG_HASH = 'sha256:5f6575958517f4a9624ca8f304a26658a3f7eae86a07a62379d39524a5042b7a';
 const STAGE_06_RELEASE_ID = 'GG_S06_ALPHA_V1';
 const STAGE_06_CONFIG_HASH = 'sha256:506f6515dd1308161d46a28f7a2769aa9ea89fe4ec479b0a21e26fd984771add';
+const STAGE_07_RELEASE_ID = 'GG_S07_ALPHA_V1';
+const STAGE_07_CONFIG_HASH = 'sha256:9f66ad1347f4e28ed7ccd306a381e536ed9b3d359643b1dd50af3f94beab5b39';
 
 const stage01RoutePoints: Point[] = [
   { x: 1100, y: -60 },
@@ -204,6 +206,42 @@ const stage06Enemies: Record<string, EnemyDefinition> = {
     renderScaleBp: 10_000,
     phaseShellAboveHpBp: 7_000,
     phaseShellMaxHitDamageBp: 15,
+  },
+};
+
+const stage07Enemies: Record<string, EnemyDefinition> = {
+  ...enemies,
+  MON_ETHEREAL_WALKER: {
+    id: 'MON_ETHEREAL_WALKER',
+    name: '虚相行者',
+    maxHpMilli: 200_000,
+    speedPxPerSecond: 70,
+    radiusPx: 36,
+    exp: 23,
+    armorBp: 800,
+    controlResistanceBp: 2_600,
+    movement: 'ground',
+    renderAssetId: 'MON_ETHEREAL_WALKER',
+    renderScaleBp: 10_800,
+    etherealCycleTicks: 150,
+    etherealSolidTicks: 90,
+    etherealDamageTakenBp: 3_000,
+  },
+  MON_DUAL_PHASE_BOOK_MOTH: {
+    id: 'MON_DUAL_PHASE_BOOK_MOTH',
+    name: '双相天蠹',
+    maxHpMilli: 2_100_000,
+    speedPxPerSecond: 41,
+    radiusPx: 90,
+    exp: 193,
+    armorBp: 2_600,
+    controlResistanceBp: 5_500,
+    movement: 'ground',
+    renderAssetId: 'MON_DUAL_PHASE_BOOK_MOTH',
+    renderScaleBp: 9_000,
+    etherealCycleTicks: 210,
+    etherealSolidTicks: 105,
+    etherealDamageTakenBp: 2_000,
   },
 };
 
@@ -769,6 +807,102 @@ const stage06Waves: WaveDefinition[] = [
   },
 ];
 
+const stage07RoutePoints: Point[] = [
+  { x: -70, y: 530 },
+  { x: 200, y: 530 },
+  { x: 440, y: 530 },
+  { x: 660, y: 500 },
+  { x: 820, y: 390 },
+  { x: 970, y: 350 },
+  { x: 1130, y: 410 },
+  { x: 1270, y: 500 },
+  { x: 1360, y: 620 },
+  { x: 1400, y: 740 },
+  { x: 1340, y: 820 },
+  { x: 1270, y: 880 },
+  { x: 1290, y: 940 },
+  { x: 1180, y: 1120 },
+];
+
+const stage07TowerAnchors: [Point, Point, Point] = [
+  { x: 589, y: 287 },
+  { x: 1406, y: 312 },
+  { x: 1034, y: 808 },
+];
+
+const stage07Waves: WaveDefinition[] = [
+  {
+    id: 'WAVE_N07_01',
+    index: 1,
+    hpMultiplierBp: 9_000,
+    expMultiplierBp: 15_000,
+    speedMultiplierBp: 10_000,
+    groups: [
+      { enemyId: 'MON_TIDE_IMP', count: 7, intervalTicks: 19 },
+      { enemyId: 'MON_SWIFT_EEL', count: 3, intervalTicks: 17 },
+      { enemyId: 'MON_SHELL_CRAB', count: 3, intervalTicks: 22 },
+      { enemyId: 'MON_ETHEREAL_WALKER', count: 1, intervalTicks: 20 },
+    ],
+  },
+  {
+    id: 'WAVE_N07_02',
+    index: 2,
+    hpMultiplierBp: 25_000,
+    expMultiplierBp: 14_000,
+    speedMultiplierBp: 10_000,
+    groups: [
+      { enemyId: 'MON_ETHEREAL_WALKER', count: 2, intervalTicks: 18 },
+      { enemyId: 'MON_SHELL_CRAB', count: 3, intervalTicks: 21 },
+      { enemyId: 'MON_TIDE_IMP', count: 5, intervalTicks: 16 },
+      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 14 },
+    ],
+  },
+  {
+    id: 'WAVE_N07_03',
+    index: 3,
+    hpMultiplierBp: 41_000,
+    expMultiplierBp: 13_000,
+    speedMultiplierBp: 10_000,
+    groups: [
+      { enemyId: 'MON_ETHEREAL_WALKER', count: 3, intervalTicks: 17 },
+      { enemyId: 'MON_REEF_GUARD', count: 4, intervalTicks: 22 },
+      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 13 },
+      { enemyId: 'MON_TIDE_IMP', count: 6, intervalTicks: 15 },
+      { enemyId: 'MON_SHELL_CRAB', count: 2, intervalTicks: 20 },
+    ],
+  },
+  {
+    id: 'WAVE_N07_04',
+    index: 4,
+    hpMultiplierBp: 62_000,
+    expMultiplierBp: 12_500,
+    speedMultiplierBp: 10_000,
+    groups: [
+      { enemyId: 'MON_ETHEREAL_WALKER', count: 5, intervalTicks: 16 },
+      { enemyId: 'MON_SHELL_CRAB', count: 5, intervalTicks: 19 },
+      { enemyId: 'MON_REEF_GUARD', count: 4, intervalTicks: 21 },
+      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 12 },
+      { enemyId: 'MON_TIDE_IMP', count: 6, intervalTicks: 14 },
+    ],
+  },
+  {
+    id: 'WAVE_N07_05',
+    index: 5,
+    hpMultiplierBp: 62_000,
+    expMultiplierBp: 13_500,
+    speedMultiplierBp: 10_000,
+    groups: [
+      { enemyId: 'MON_ETHEREAL_WALKER', count: 1, intervalTicks: 18 },
+      { enemyId: 'MON_DUAL_PHASE_BOOK_MOTH', count: 1, intervalTicks: 1 },
+      { enemyId: 'MON_ETHEREAL_WALKER', count: 5, intervalTicks: 16 },
+      { enemyId: 'MON_REEF_GUARD', count: 5, intervalTicks: 19 },
+      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 11 },
+      { enemyId: 'MON_SHELL_CRAB', count: 5, intervalTicks: 17 },
+      { enemyId: 'MON_TIDE_IMP', count: 4, intervalTicks: 14 },
+    ],
+  },
+];
+
 const stage01SourceBundle: BattleBundleV1 = {
   schemaVersion: 1,
   releaseId: STAGE_01_RELEASE_ID,
@@ -1015,6 +1149,47 @@ const stage06SourceBundle: BattleBundleV1 = {
   },
 };
 
+const stage07SourceBundle: BattleBundleV1 = {
+  schemaVersion: 1,
+  releaseId: STAGE_07_RELEASE_ID,
+  configHash: STAGE_07_CONFIG_HASH,
+  stage: {
+    id: 'STAGE_07',
+    name: '山河残卷',
+    backgroundAssetId: 'STAGE_07_BACKGROUND',
+  },
+  route: {
+    id: 'ROUTE_STAGE_07_BROKEN_SCROLL',
+    points: stage07RoutePoints,
+    towerAnchors: stage07TowerAnchors,
+    breachPoint: stage07RoutePoints[stage07RoutePoints.length - 1] ?? { x: 1180, y: 1120 },
+  },
+  tower: {
+    baseDamageMilli: 24_000,
+    attackIntervalTicks: 24,
+    rangePx: 750,
+    aimHalfAngleU16: 10_923,
+    projectileSpeedPxPerSecond: 960,
+    projectileRadiusPx: 6,
+    baseArrowCount: 1,
+    basePenetration: 0,
+    penetrationRetentionBp: 8_500,
+    critChanceBp: 500,
+    critDamageBp: 15_000,
+  },
+  enemies: stage07Enemies,
+  waves: stage07Waves,
+  cards,
+  rules: {
+    maxLevel: 50,
+    groupGapTicks: 13,
+    waveGapTicks: 42,
+    reviveGuardTicks: 60,
+    reviveGroundRollbackBp: 1_000,
+    maxRevives: 2,
+  },
+};
+
 function cloneBundle(source: BattleBundleV1): BattleBundleV1 {
   return JSON.parse(JSON.stringify(source)) as BattleBundleV1;
 }
@@ -1037,6 +1212,7 @@ export const STAGE_03_BATTLE_BUNDLE: BattleBundleV1 = deepFreeze(cloneBundle(sta
 export const STAGE_04_BATTLE_BUNDLE: BattleBundleV1 = deepFreeze(cloneBundle(stage04SourceBundle));
 export const STAGE_05_BATTLE_BUNDLE: BattleBundleV1 = deepFreeze(cloneBundle(stage05SourceBundle));
 export const STAGE_06_BATTLE_BUNDLE: BattleBundleV1 = deepFreeze(cloneBundle(stage06SourceBundle));
+export const STAGE_07_BATTLE_BUNDLE: BattleBundleV1 = deepFreeze(cloneBundle(stage07SourceBundle));
 export const STAGE_ORDER = BATTLE_STAGE_ORDER;
 export const STAGE_BUNDLES: Record<BattleStageId, BattleBundleV1> = {
   STAGE_01: STAGE_01_BATTLE_BUNDLE,
@@ -1045,6 +1221,7 @@ export const STAGE_BUNDLES: Record<BattleStageId, BattleBundleV1> = {
   STAGE_04: STAGE_04_BATTLE_BUNDLE,
   STAGE_05: STAGE_05_BATTLE_BUNDLE,
   STAGE_06: STAGE_06_BATTLE_BUNDLE,
+  STAGE_07: STAGE_07_BATTLE_BUNDLE,
 };
 
 export function createStage01Bundle(): BattleBundleV1 {
@@ -1069,4 +1246,8 @@ export function createStage05Bundle(): BattleBundleV1 {
 
 export function createStage06Bundle(): BattleBundleV1 {
   return cloneBundle(stage06SourceBundle);
+}
+
+export function createStage07Bundle(): BattleBundleV1 {
+  return cloneBundle(stage07SourceBundle);
 }

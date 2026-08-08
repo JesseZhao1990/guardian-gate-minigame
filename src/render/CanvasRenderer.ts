@@ -4,6 +4,7 @@ import {
   DESIGN_HEIGHT,
   DESIGN_WIDTH,
   ENEMY_FLAG_ENRAGED,
+  ENEMY_FLAG_ETHEREAL,
   ENEMY_FLAG_GUARD_AURA,
   ENEMY_FLAG_GUARDED,
   ENEMY_FLAG_PHASE_SHELL,
@@ -97,6 +98,7 @@ const ASSET_PATHS: Record<string, string> = {
   STAGE_04_BACKGROUND: 'assets/stage-04/background/STAGE_04_BACKGROUND.jpg',
   STAGE_05_BACKGROUND: 'assets/stage-05/background/STAGE_05_BACKGROUND.jpg',
   STAGE_06_BACKGROUND: 'assets/stage-06/background/STAGE_06_BACKGROUND.jpg',
+  STAGE_07_BACKGROUND: 'assets/stage-07/background/STAGE_07_BACKGROUND.jpg',
   MON_SWIFT_EEL: 'assets/stage-01/enemies/MON_SWIFT_EEL_BATTLE_V2.png',
   MON_TIDE_IMP: 'assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
   MON_SHELL_CRAB: 'assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
@@ -108,6 +110,8 @@ const ASSET_PATHS: Record<string, string> = {
   MON_ECLIPSE_KUN_EMPEROR: 'assets/stage-05/enemies/MON_ECLIPSE_KUN_EMPEROR.png',
   MON_PHASE_SHELL_WEAVER: 'assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
   MON_MIRAGE_MOTHER: 'assets/stage-06/enemies/MON_MIRAGE_MOTHER.png',
+  MON_ETHEREAL_WALKER: 'assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
+  MON_DUAL_PHASE_BOOK_MOTH: 'assets/stage-07/enemies/MON_DUAL_PHASE_BOOK_MOTH.png',
   TOWER_SOLAR_BASE: 'assets/stage-01/towers/TOWER_SOLAR_BASE_V2.png',
   TOWER_SOLAR_HEAD: 'assets/stage-01/towers/TOWER_SOLAR_HEAD_V2.png',
   TOWER_FROST_BASE: 'assets/stage-01/towers/TOWER_FROST_BASE_V2.png',
@@ -257,6 +261,30 @@ const ENEMY_VISUALS: Record<string, EnemyVisualDescriptor> = {
     auraInner: 'rgba(239, 76, 185, .24)',
     auraOuter: 'rgba(92, 226, 166, .13)',
   },
+  MON_ETHEREAL_WALKER: {
+    width: 150,
+    height: 120,
+    sx: 28,
+    sy: 30,
+    sw: 238,
+    sh: 194,
+    followsRoute: true,
+    role: 'normal',
+  },
+  MON_DUAL_PHASE_BOOK_MOTH: {
+    width: 292,
+    height: 234,
+    sx: 0,
+    sy: 0,
+    sw: 600,
+    sh: 480,
+    followsRoute: false,
+    role: 'boss',
+    armorBadge: true,
+    displayName: '首领 · 双相天蠹',
+    auraInner: 'rgba(194, 63, 48, .24)',
+    auraOuter: 'rgba(229, 211, 173, .13)',
+  },
 };
 
 const HOME_STAGE_META: Record<BattleStageId, {
@@ -314,13 +342,22 @@ const HOME_STAGE_META: Record<BattleStageId, {
     hudLabel: '第五关',
   },
   STAGE_06: {
-    eyebrow: '终章 · 万潮归梦',
+    eyebrow: '幻章 · 万潮归梦',
     description: '相壳会限制单支箭伤害；以箭数和攻速击碎蜃境，再终结万相蜃母。',
     lockedDescription: '重燃扶桑晨光后，太初蜃庭将显露在无风镜海之上。',
     lockedStatus: '通关第五关后解锁',
-    shortStatus: '太初终战',
+    shortStatus: '太初蜃境',
     startLabel: '踏入蜃庭  ›',
     hudLabel: '第六关',
+  },
+  STAGE_07: {
+    eyebrow: '终章 · 虚实失序',
+    description: '虚相会大幅削减来箭；抓住实体窗口集火，终结双相天蠹。',
+    lockedDescription: '封住太初蜃庭后，无字天书中的山河残卷将显露真形。',
+    lockedStatus: '前关通关解锁',
+    shortStatus: '虚实终战',
+    startLabel: '展开残卷  ›',
+    hudLabel: '第七关',
   },
 };
 
@@ -332,7 +369,7 @@ interface BattleStageTheme {
   routeFill: string;
   routeCore: string;
   breachLabel: string;
-  breachMotif: 'battlement' | 'tide' | 'dragon' | 'abyss' | 'sun' | 'pearl';
+  breachMotif: 'battlement' | 'tide' | 'dragon' | 'abyss' | 'sun' | 'pearl' | 'scroll';
 }
 
 const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
@@ -396,6 +433,16 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     breachLabel: '太初印',
     breachMotif: 'pearl',
   },
+  STAGE_07: {
+    accent: '#d45a49',
+    secondary: '#ead8af',
+    surface: '#302725',
+    glow: 'rgba(212, 90, 73, .28)',
+    routeFill: 'rgba(32, 27, 26, .31)',
+    routeCore: 'rgba(234, 216, 175, .68)',
+    breachLabel: '山河印',
+    breachMotif: 'scroll',
+  },
 };
 
 export interface HomeStageCardLayout {
@@ -407,7 +454,77 @@ export interface HomeStageCardLayout {
   hitHeight: number;
 }
 
+export interface ViewportLayout {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+export interface CardOverlayLayout {
+  cardWidth: number;
+  cardHeight: number;
+  cardY: number;
+  starts: [number, number, number];
+}
+
+export function resolveViewportLayout(width: number, height: number): ViewportLayout {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  const scale = Math.min(safeWidth / DESIGN_WIDTH, safeHeight / DESIGN_HEIGHT);
+  const offsetX = (safeWidth - DESIGN_WIDTH * scale) / 2;
+  const offsetY = (safeHeight - DESIGN_HEIGHT * scale) / 2;
+  const viewportWidth = safeWidth / scale;
+  const viewportHeight = safeHeight / scale;
+  const left = -offsetX / scale;
+  const top = -offsetY / scale;
+  return {
+    scale,
+    offsetX,
+    offsetY,
+    left,
+    top,
+    right: left + viewportWidth,
+    bottom: top + viewportHeight,
+    width: viewportWidth,
+    height: viewportHeight,
+  };
+}
+
+export function resolveCardOverlayLayout(viewport: ViewportLayout): CardOverlayLayout {
+  const extraWidth = Math.max(0, viewport.width - DESIGN_WIDTH);
+  const cardWidth = Math.min(500, 420 + extraWidth / 6);
+  const gap = Math.min(120, 100 + extraWidth / 24);
+  const totalWidth = cardWidth * 3 + gap * 2;
+  const firstX = viewport.left + (viewport.width - totalWidth) / 2;
+  return {
+    cardWidth,
+    cardHeight: 570,
+    cardY: 252,
+    starts: [firstX, firstX + cardWidth + gap, firstX + (cardWidth + gap) * 2],
+  };
+}
+
+export function resolveCanvasFontWeight(weight: number): 'normal' | 'bold' {
+  return weight >= 600 ? 'bold' : 'normal';
+}
+
 export function resolveHomeStageCardLayout(stageCount: number, index: number): HomeStageCardLayout {
+  if (stageCount >= 7) {
+    return {
+      x: 618 + index * 172,
+      y: 636,
+      width: 160,
+      height: 100,
+      hitY: 622,
+      hitHeight: 128,
+    };
+  }
   const usesSixCardRail = stageCount >= 6;
   return {
     x: (usesSixCardRail ? 690 : 800) + index * (usesSixCardRail ? 189 : 205),
@@ -549,6 +666,7 @@ export class CanvasRenderer {
   private lastSnapshotTick = -1;
   private readonly towerRecoilStartedAt = [0, 0, 0];
   private readonly towerReleaseFacingsU16: Array<number | undefined> = [undefined, undefined, undefined];
+  private viewport = resolveViewportLayout(DESIGN_WIDTH, DESIGN_HEIGHT);
   private scale = 1;
   private offsetX = 0;
   private offsetY = 0;
@@ -705,7 +823,12 @@ export class CanvasRenderer {
     this.beginFrame();
     this.drawBackground();
     this.context.fillStyle = 'rgba(3, 10, 25, 0.72)';
-    this.context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+    this.context.fillRect(
+      this.viewport.left,
+      this.viewport.top,
+      this.viewport.width,
+      this.viewport.height,
+    );
     this.drawSeal(DESIGN_WIDTH / 2, 430, 78, '守');
     this.text('布置箭塔', DESIGN_WIDTH / 2, 570, 48, '#f3dfaa', 'center', 700);
     this.text(progress, DESIGN_WIDTH / 2, 625, 24, 'rgba(232,245,244,.68)', 'center');
@@ -726,10 +849,15 @@ export class CanvasRenderer {
     gradient.addColorStop(0.48, 'rgba(3,10,23,.34)');
     gradient.addColorStop(1, 'rgba(3,10,23,.12)');
     this.context.fillStyle = gradient;
-    this.context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+    this.context.fillRect(
+      this.viewport.left,
+      this.viewport.top,
+      this.viewport.width,
+      this.viewport.height,
+    );
 
     this.drawSeal(92, 82, 48, '守');
-    this.text('原创海防神话 · 六关战役', 165, 58, 20, '#76dfdb', 'left', 600);
+    this.text('原创海防神话 · 七关战役', 165, 58, 20, '#76dfdb', 'left', 600);
     this.text('东海潮生，关城告急', 165, 92, 24, '#f2e6c6', 'left', 700);
     this.pill(1590, 46, 250, 58, '微信小游戏版', '#102b42', '#6fded8');
 
@@ -745,6 +873,7 @@ export class CanvasRenderer {
       const layout = resolveHomeStageCardLayout(state.stages.length, index);
       const { x, y, width, height } = layout;
       const selected = stage.id === selectedStage.id;
+      const usesSevenCardRail = state.stages.length >= 7;
       const stageColor = selected ? '#efc56b' : stage.unlocked ? '#5bdad7' : '#536778';
       this.context.fillStyle = selected ? 'rgba(9,29,48,.96)' : 'rgba(5,18,35,.86)';
       this.context.strokeStyle = stageColor;
@@ -752,23 +881,31 @@ export class CanvasRenderer {
       this.roundRect(x, y, width, height, 20);
       this.context.fill();
       this.context.stroke();
-      const nameX = x + (state.stages.length >= 6 ? 45 : 52);
+      const nameX = usesSevenCardRail ? x + width / 2 : x + (state.stages.length >= 6 ? 45 : 52);
       const numberY = y + 60;
-      this.text(this.stageNumber(stage.id), x + 11, numberY, 28, `${stageColor}80`, 'left', 800);
+      this.text(
+        this.stageNumber(stage.id),
+        x + 11,
+        usesSevenCardRail ? y + 23 : numberY,
+        usesSevenCardRail ? 13 : 28,
+        `${stageColor}80`,
+        'left',
+        800,
+      );
       this.context.save();
       this.context.beginPath();
-      this.context.rect(nameX - 2, y + 8, width - (nameX - x) - 8, height - 16);
+      this.context.rect(usesSevenCardRail ? x + 8 : nameX - 2, y + 8, usesSevenCardRail ? width - 16 : width - (nameX - x) - 8, height - 16);
       this.context.clip();
-      this.text(stage.name, nameX, y + 43, state.stages.length >= 6 ? 17 : 18, stage.unlocked ? '#f3ead6' : '#82909a', 'left', 700, 10);
+      this.text(stage.name, nameX, y + 43, usesSevenCardRail ? 16 : state.stages.length >= 6 ? 17 : 18, stage.unlocked ? '#f3ead6' : '#82909a', usesSevenCardRail ? 'center' : 'left', 700, 10);
       this.text(
         stage.unlocked
           ? (stage.completed ? '已通关 · 可重玩' : HOME_STAGE_META[stage.id].shortStatus)
           : HOME_STAGE_META[stage.id].lockedStatus,
         nameX,
         y + 72,
-        13,
+        usesSevenCardRail ? 12 : 13,
         stageColor,
-        'left',
+        usesSevenCardRail ? 'center' : 'left',
         600,
         8,
       );
@@ -832,7 +969,7 @@ export class CanvasRenderer {
 
     const totalStages = String(state.stages.length).padStart(2, '0');
     this.text(`STAGE ${stageNumber} / ${totalStages}`, 118, 1040, 17, 'rgba(230,239,235,.5)', 'left', 600);
-    this.text('六关独立存档 · 通关逐关解锁', 1800, 1040, 17, 'rgba(230,239,235,.5)', 'right');
+    this.text('七关独立存档 · 通关逐关解锁', 1800, 1040, 17, 'rgba(230,239,235,.5)', 'right');
   }
 
   drawBattle(state: BattleRenderState): void {
@@ -843,7 +980,12 @@ export class CanvasRenderer {
     );
     this.drawBackground();
     this.context.fillStyle = 'rgba(2, 10, 25, .20)';
-    this.context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+    this.context.fillRect(
+      this.viewport.left,
+      this.viewport.top,
+      this.viewport.width,
+      this.viewport.height,
+    );
     this.drawRoute();
     this.drawAimGuides(
       state.hud.aimAnglesU16,
@@ -899,23 +1041,169 @@ export class CanvasRenderer {
 
   private updateViewport(): void {
     const { width, height } = this.runtime.size();
-    this.scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
-    this.offsetX = (width - DESIGN_WIDTH * this.scale) / 2;
-    this.offsetY = (height - DESIGN_HEIGHT * this.scale) / 2;
+    this.viewport = resolveViewportLayout(width, height);
+    this.scale = this.viewport.scale;
+    this.offsetX = this.viewport.offsetX;
+    this.offsetY = this.viewport.offsetY;
   }
 
   private drawBackground(): void {
     const background = this.images.get(this.bundle.stage.backgroundAssetId);
     if (background) {
+      this.context.fillStyle = '#071528';
+      this.context.fillRect(
+        this.viewport.left,
+        this.viewport.top,
+        this.viewport.width,
+        this.viewport.height,
+      );
+      this.drawBackgroundExtensions(background);
       this.context.drawImage(background, 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+      this.drawBackgroundEdgeShade();
       return;
     }
-    const gradient = this.context.createLinearGradient(0, 0, 0, DESIGN_HEIGHT);
+    const gradient = this.context.createLinearGradient(0, this.viewport.top, 0, this.viewport.bottom);
     gradient.addColorStop(0, '#112b4a');
     gradient.addColorStop(0.58, '#12455c');
     gradient.addColorStop(1, '#07354a');
     this.context.fillStyle = gradient;
-    this.context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+    this.context.fillRect(
+      this.viewport.left,
+      this.viewport.top,
+      this.viewport.width,
+      this.viewport.height,
+    );
+  }
+
+  private drawBackgroundExtensions(background: any): void {
+    const leftWidth = Math.max(0, -this.viewport.left);
+    if (leftWidth > 0) {
+      const sourceWidth = Math.min(DESIGN_WIDTH, leftWidth);
+      this.context.save();
+      this.context.scale(-1, 1);
+      this.context.drawImage(
+        background,
+        0,
+        0,
+        sourceWidth,
+        DESIGN_HEIGHT,
+        0,
+        0,
+        leftWidth,
+        DESIGN_HEIGHT,
+      );
+      this.context.restore();
+    }
+
+    const rightWidth = Math.max(0, this.viewport.right - DESIGN_WIDTH);
+    if (rightWidth > 0) {
+      const sourceWidth = Math.min(DESIGN_WIDTH, rightWidth);
+      this.context.save();
+      this.context.translate(DESIGN_WIDTH, 0);
+      this.context.scale(-1, 1);
+      this.context.drawImage(
+        background,
+        DESIGN_WIDTH - sourceWidth,
+        0,
+        sourceWidth,
+        DESIGN_HEIGHT,
+        -rightWidth,
+        0,
+        rightWidth,
+        DESIGN_HEIGHT,
+      );
+      this.context.restore();
+    }
+
+    const topHeight = Math.max(0, -this.viewport.top);
+    if (topHeight > 0) {
+      const sourceHeight = Math.min(DESIGN_HEIGHT, topHeight);
+      this.context.save();
+      this.context.scale(1, -1);
+      this.context.drawImage(
+        background,
+        0,
+        0,
+        DESIGN_WIDTH,
+        sourceHeight,
+        0,
+        0,
+        DESIGN_WIDTH,
+        topHeight,
+      );
+      this.context.restore();
+    }
+
+    const bottomHeight = Math.max(0, this.viewport.bottom - DESIGN_HEIGHT);
+    if (bottomHeight > 0) {
+      const sourceHeight = Math.min(DESIGN_HEIGHT, bottomHeight);
+      this.context.save();
+      this.context.translate(0, DESIGN_HEIGHT);
+      this.context.scale(1, -1);
+      this.context.drawImage(
+        background,
+        0,
+        DESIGN_HEIGHT - sourceHeight,
+        DESIGN_WIDTH,
+        sourceHeight,
+        0,
+        -bottomHeight,
+        DESIGN_WIDTH,
+        bottomHeight,
+      );
+      this.context.restore();
+    }
+  }
+
+  private drawBackgroundEdgeShade(): void {
+    if (this.viewport.left < 0) {
+      const gradient = this.context.createLinearGradient(this.viewport.left, 0, 0, 0);
+      gradient.addColorStop(0, 'rgba(1, 7, 18, .46)');
+      gradient.addColorStop(1, 'rgba(1, 7, 18, 0)');
+      this.context.fillStyle = gradient;
+      this.context.fillRect(
+        this.viewport.left,
+        this.viewport.top,
+        -this.viewport.left,
+        this.viewport.height,
+      );
+    }
+    if (this.viewport.right > DESIGN_WIDTH) {
+      const gradient = this.context.createLinearGradient(DESIGN_WIDTH, 0, this.viewport.right, 0);
+      gradient.addColorStop(0, 'rgba(1, 7, 18, 0)');
+      gradient.addColorStop(1, 'rgba(1, 7, 18, .46)');
+      this.context.fillStyle = gradient;
+      this.context.fillRect(
+        DESIGN_WIDTH,
+        this.viewport.top,
+        this.viewport.right - DESIGN_WIDTH,
+        this.viewport.height,
+      );
+    }
+    if (this.viewport.top < 0) {
+      const gradient = this.context.createLinearGradient(0, this.viewport.top, 0, 0);
+      gradient.addColorStop(0, 'rgba(1, 7, 18, .42)');
+      gradient.addColorStop(1, 'rgba(1, 7, 18, 0)');
+      this.context.fillStyle = gradient;
+      this.context.fillRect(
+        this.viewport.left,
+        this.viewport.top,
+        this.viewport.width,
+        -this.viewport.top,
+      );
+    }
+    if (this.viewport.bottom > DESIGN_HEIGHT) {
+      const gradient = this.context.createLinearGradient(0, DESIGN_HEIGHT, 0, this.viewport.bottom);
+      gradient.addColorStop(0, 'rgba(1, 7, 18, 0)');
+      gradient.addColorStop(1, 'rgba(1, 7, 18, .42)');
+      this.context.fillStyle = gradient;
+      this.context.fillRect(
+        this.viewport.left,
+        DESIGN_HEIGHT,
+        this.viewport.width,
+        this.viewport.bottom - DESIGN_HEIGHT,
+      );
+    }
   }
 
   private drawRoute(): void {
@@ -1167,6 +1455,29 @@ export class CanvasRenderer {
       this.context.fillStyle = theme.accent;
       this.context.beginPath();
       this.context.arc(0, 1, 3.5, 0, Math.PI * 2);
+      this.context.fill();
+    } else if (theme.breachMotif === 'scroll') {
+      this.context.beginPath();
+      this.context.moveTo(-25, -16);
+      this.context.quadraticCurveTo(-34, -16, -31, -5);
+      this.context.lineTo(-25, 17);
+      this.context.lineTo(23, 17);
+      this.context.quadraticCurveTo(34, 17, 30, 6);
+      this.context.lineTo(24, -16);
+      this.context.closePath();
+      this.context.stroke();
+      this.context.beginPath();
+      this.context.moveTo(-18, -7);
+      this.context.lineTo(17, -7);
+      this.context.moveTo(-13, 2);
+      this.context.lineTo(12, 2);
+      this.context.moveTo(-7, 10);
+      this.context.lineTo(18, 10);
+      this.context.stroke();
+      this.context.fillStyle = theme.accent;
+      this.context.beginPath();
+      this.context.arc(-23, 17, 3.5, 0, Math.PI * 2);
+      this.context.arc(22, -16, 3.5, 0, Math.PI * 2);
       this.context.fill();
     } else {
       for (const direction of [-1, 1]) {
@@ -1500,6 +1811,7 @@ export class CanvasRenderer {
     const isGuardAuraSource = (entity.flags & ENEMY_FLAG_GUARD_AURA) !== 0;
     const isGuarded = (entity.flags & ENEMY_FLAG_GUARDED) !== 0;
     const hasPhaseShell = (entity.flags & ENEMY_FLAG_PHASE_SHELL) !== 0;
+    const isEthereal = (entity.flags & ENEMY_FLAG_ETHEREAL) !== 0;
     const bodyWidth = visual.width;
     const bodyHeight = visual.height;
     const basePhaseMs = isBoss ? 330 : isArmored ? 250 : isEel ? 145 : 190;
@@ -1560,6 +1872,25 @@ export class CanvasRenderer {
       this.context.stroke();
       this.context.restore();
     }
+    if (isEthereal) {
+      const phasePulse = .5 + Math.sin(now / 155 + entity.entityId * .57) * .5;
+      this.context.save();
+      this.context.globalAlpha = .42 + phasePulse * .24;
+      this.context.strokeStyle = '#ead8af';
+      this.context.lineWidth = isBoss ? 5 : 3;
+      this.context.setLineDash(isBoss ? [24, 10, 5, 10] : [14, 8, 4, 8]);
+      this.context.lineDashOffset = now / 52;
+      this.context.beginPath();
+      this.context.ellipse(0, 7, bodyWidth * .55, bodyHeight * .48, 0, 0, Math.PI * 2);
+      this.context.stroke();
+      this.context.strokeStyle = '#d45a49';
+      this.context.lineWidth = 2;
+      this.context.setLineDash(isBoss ? [7, 16] : [5, 12]);
+      this.context.beginPath();
+      this.context.ellipse(0, 7, bodyWidth * .61, bodyHeight * .53, 0, 0, Math.PI * 2);
+      this.context.stroke();
+      this.context.restore();
+    }
 
     if (isBoss) {
       const aura = this.context.createRadialGradient(0, 20, 18, 0, 20, bodyWidth * .62);
@@ -1591,6 +1922,7 @@ export class CanvasRenderer {
     this.context.translate(0, bob);
     this.context.rotate((visual.followsRoute ? routeAngle : 0) + sway);
     this.context.scale(scale, scale);
+    if (isEthereal) this.context.globalAlpha = .48;
     const image = this.images.get(entity.assetId);
     if (image) {
       const imageAspect = visual.sw / visual.sh;
@@ -1656,20 +1988,33 @@ export class CanvasRenderer {
       this.text('相', badgeX, -bodyHeight * .27 + 6, isBoss ? 18 : 14, '#171326', 'center', 850, 9);
     }
 
+    if (isEthereal) {
+      const badgeX = (visual.armorBadge || hasPhaseShell ? -1 : 1) * bodyWidth * .38;
+      this.context.fillStyle = '#292221';
+      this.context.strokeStyle = '#ead8af';
+      this.context.lineWidth = 2;
+      this.context.beginPath();
+      this.context.arc(badgeX, -bodyHeight * .27, isBoss ? 19 : 15, 0, Math.PI * 2);
+      this.context.fill();
+      this.context.stroke();
+      this.text('虚', badgeX, -bodyHeight * .27 + 6, isBoss ? 18 : 14, '#e8b9a5', 'center', 850, 9);
+    }
+
     if (entity.hpBp >= 9_995 && !isBoss) return;
     const health = Math.max(0, Math.min(1, entity.hpBp / 10_000));
     const barWidth = isBoss ? 220 : isGuard ? 146 : isCrab ? 124 : isEel ? 108 : 96;
     const barY = -bodyHeight * .52 - 18 + bob;
     if (isBoss) {
-      const bossName = hasPhaseShell
+      const baseBossName = hasPhaseShell
         ? (visual.displayName ?? '首领').replace('首领', '相壳')
         : visual.displayName ?? '首领';
+      const bossName = isEthereal ? baseBossName.replace('首领', '虚相') : baseBossName;
       this.text(
         isEnraged ? bossName.replace('首领', '狂潮') : bossName,
         0,
         barY - 12,
         17,
-        isEnraged ? '#ffb08a' : '#ead9ff',
+        isEnraged ? '#ffb08a' : isEthereal ? '#efd5b1' : '#ead9ff',
         'center',
         750,
         10,
@@ -1842,7 +2187,12 @@ export class CanvasRenderer {
     bottomShade.addColorStop(.56, 'rgba(2, 9, 21, .88)');
     bottomShade.addColorStop(1, 'rgba(2, 9, 21, .97)');
     this.context.fillStyle = bottomShade;
-    this.context.fillRect(0, 870, DESIGN_WIDTH, DESIGN_HEIGHT - 870);
+    this.context.fillRect(
+      this.viewport.left,
+      870,
+      this.viewport.width,
+      this.viewport.bottom - 870,
+    );
     const bottomRule = this.context.createLinearGradient(0, 0, DESIGN_WIDTH, 0);
     bottomRule.addColorStop(0, 'rgba(0, 0, 0, 0)');
     bottomRule.addColorStop(.23, theme.accent);
@@ -1892,10 +2242,11 @@ export class CanvasRenderer {
     this.text(`${Math.max(1, hud.waveIndex)} / ${hud.waveCount}`, 1085, 67, 30, '#f4dfad', 'right', 750);
     this.progressBar(825, 84, 270, 10, hud.progressBp / 10_000, theme.secondary);
 
-    this.drawButton('hud-speed', 1570, 28, 92, 78, `${hud.speed}×`, 'rgba(6,20,40,.9)', '#f2e8cd', '#5b7384');
+    const controlsRight = this.resolveHudControlsRight();
+    this.drawButton('hud-speed', controlsRight - 302, 28, 92, 78, `${hud.speed}×`, 'rgba(6,20,40,.9)', '#f2e8cd', '#5b7384');
     this.drawButton(
       'hud-pause',
-      1675,
+      controlsRight - 197,
       28,
       92,
       78,
@@ -1904,7 +2255,7 @@ export class CanvasRenderer {
       '#f2e8cd',
       '#5b7384',
     );
-    this.drawButton('hud-mute', 1780, 28, 92, 78, muted ? '音效关' : '音效', 'rgba(6,20,40,.9)', '#f2e8cd', '#5b7384');
+    this.drawButton('hud-mute', controlsRight - 92, 28, 92, 78, muted ? '音效关' : '音效', 'rgba(6,20,40,.9)', '#f2e8cd', '#5b7384');
 
     this.context.fillStyle = 'rgba(4, 17, 34, .9)';
     this.roundRect(42, 918, 660, 122, 24);
@@ -1932,15 +2283,26 @@ export class CanvasRenderer {
     );
   }
 
+  private resolveHudControlsRight(): number {
+    const size = this.runtime.size();
+    const gapPx = 12;
+    let screenRight = Math.min(size.width, size.safeArea.right) - gapPx;
+    const menu = size.menuButtonRect;
+    const hudTop = this.offsetY + 20 * this.scale;
+    const hudBottom = this.offsetY + 114 * this.scale;
+    if (menu && menu.bottom >= hudTop && menu.top <= hudBottom) {
+      screenRight = Math.min(screenRight, menu.left - gapPx);
+    }
+    const designRight = (screenRight - this.offsetX) / this.scale;
+    return Math.max(1_450, Math.min(1_872, designRight));
+  }
+
   private drawCardOverlay(cardIds: [string, string, string]): void {
     this.drawModalShade();
     this.text('境界突破', 960, 112, 26, '#74dfdb', 'center', 600, 12, CARD_BODY_FONT);
     this.text('择一法门，守住关城', 960, 170, 48, '#f4e6c4', 'center', 700, 17, CARD_SERIF_FONT);
     this.text('强化会立即作用于三座箭塔', 960, 216, 25, 'rgba(231,241,237,.72)', 'center', 400, 12, CARD_BODY_FONT);
-    const cardWidth = 420;
-    const cardHeight = 570;
-    const cardY = 252;
-    const starts = [230, 750, 1270];
+    const { cardWidth, cardHeight, cardY, starts } = resolveCardOverlayLayout(this.viewport);
     cardIds.forEach((cardId, index) => {
       const card = this.cardsById.get(cardId);
       if (!card) return;
@@ -1967,9 +2329,9 @@ export class CanvasRenderer {
       this.roundRect(x + 11, cardY + 11, cardWidth - 22, cardHeight - 22, 17);
       this.context.stroke();
 
-      this.text(`0${index + 1}`, x + 30, cardY + 50, 22, 'rgba(235,241,232,.52)', 'left', 600, 10, CARD_NUMBER_FONT);
+      this.text(`0${index + 1}`, x + 30, cardY + 50, 22, 'rgba(235,241,232,.52)', 'left', 600, 12, CARD_NUMBER_FONT);
       this.pill(
-        x + 280,
+        x + cardWidth - 140,
         cardY + 20,
         110,
         42,
@@ -1977,7 +2339,7 @@ export class CanvasRenderer {
         `${color}24`,
         color,
         20,
-        11,
+        13,
       );
 
       const iconGlow = this.context.createRadialGradient(
@@ -1996,10 +2358,10 @@ export class CanvasRenderer {
       this.context.fill();
 
       const icon = this.images.get(card.iconAssetId);
-      if (icon) this.context.drawImage(icon, x + 154, cardY + 94, 112, 112);
+      if (icon) this.context.drawImage(icon, x + (cardWidth - 112) / 2, cardY + 94, 112, 112);
       else this.drawSeal(x + cardWidth / 2, cardY + 146, 54, '法');
 
-      this.text(card.name, x + cardWidth / 2, cardY + 258, 38, '#f4ead3', 'center', 700, 15, CARD_SERIF_FONT);
+      this.text(card.name, x + cardWidth / 2, cardY + 258, 38, '#f4ead3', 'center', 700, 18, CARD_SERIF_FONT);
 
       const rule = this.context.createLinearGradient(x + 70, 0, x + cardWidth - 70, 0);
       rule.addColorStop(0, `${color}00`);
@@ -2008,7 +2370,7 @@ export class CanvasRenderer {
       this.context.fillStyle = rule;
       this.context.fillRect(x + 70, cardY + 284, cardWidth - 140, 2);
 
-      this.text(cardAmount(card), x + cardWidth / 2, cardY + 354, 48, color, 'center', 720, 20, CARD_NUMBER_FONT);
+      this.text(cardAmount(card), x + cardWidth / 2, cardY + 354, 48, color, 'center', 720, 22, CARD_NUMBER_FONT);
       this.wrapText(
         cardDescription(card),
         x + cardWidth / 2,
@@ -2018,7 +2380,7 @@ export class CanvasRenderer {
         24,
         'rgba(224,240,234,.72)',
         450,
-        14,
+        15,
         2,
         CARD_BODY_FONT,
       );
@@ -2041,23 +2403,24 @@ export class CanvasRenderer {
         color,
         'center',
         650,
-        13,
+        15,
         CARD_BODY_FONT,
       );
       this.interactions.push({ id: `card:${card.id}`, x, y: cardY, width: cardWidth, height: cardHeight });
     });
+    const rerollWidth = Math.min(480, 400 + Math.max(0, this.viewport.width - DESIGN_WIDTH) / 6);
     this.drawButton(
       'card-reroll',
-      760,
+      960 - rerollWidth / 2,
       858,
-      400,
+      rerollWidth,
       68,
       '↻  重抽一次 · 练习免费',
       'rgba(8,28,46,.88)',
       'rgba(235,240,228,.82)',
       'rgba(88,174,245,.42)',
       24,
-      13,
+      15,
     );
   }
 
@@ -2305,7 +2668,12 @@ export class CanvasRenderer {
 
   private drawModalShade(color = 'rgba(2, 9, 22, .74)'): void {
     this.context.fillStyle = color;
-    this.context.fillRect(0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+    this.context.fillRect(
+      this.viewport.left,
+      this.viewport.top,
+      this.viewport.width,
+      this.viewport.height,
+    );
   }
 
   private drawPanel(x: number, y: number, width: number, height: number, border: string): void {
@@ -2428,7 +2796,7 @@ export class CanvasRenderer {
   ): void {
     const resolvedSize = this.resolveFontSize(size, minScreenPx);
     this.context.fillStyle = color;
-    this.context.font = `${weight} ${resolvedSize}px ${fontFamily}`;
+    this.context.font = `${resolveCanvasFontWeight(weight)} ${resolvedSize}px ${fontFamily}`;
     this.context.textAlign = align;
     this.context.textBaseline = 'alphabetic';
     this.context.fillText(value, x, y);
@@ -2449,7 +2817,7 @@ export class CanvasRenderer {
   ): void {
     const resolvedSize = this.resolveFontSize(size, minScreenPx);
     const resolvedLineHeight = Math.max(lineHeight, resolvedSize * 1.28);
-    this.context.font = `${weight} ${resolvedSize}px ${fontFamily}`;
+    this.context.font = `${resolveCanvasFontWeight(weight)} ${resolvedSize}px ${fontFamily}`;
     const lines: string[] = [];
     let current = '';
     for (const character of value) {

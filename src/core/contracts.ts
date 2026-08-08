@@ -14,6 +14,7 @@ export const ENEMY_FLAG_ENRAGED = 0b0010 as const;
 export const ENEMY_FLAG_GUARD_AURA = 0b0100 as const;
 export const ENEMY_FLAG_GUARDED = 0b1000 as const;
 export const ENEMY_FLAG_PHASE_SHELL = 0b1_0000 as const;
+export const ENEMY_FLAG_ETHEREAL = 0b10_0000 as const;
 
 export type BattleFlowState =
   | 'idle'
@@ -38,7 +39,8 @@ export type BattleStageId =
   | 'STAGE_03'
   | 'STAGE_04'
   | 'STAGE_05'
-  | 'STAGE_06';
+  | 'STAGE_06'
+  | 'STAGE_07';
 export const BATTLE_STAGE_ORDER = [
   'STAGE_01',
   'STAGE_02',
@@ -46,6 +48,7 @@ export const BATTLE_STAGE_ORDER = [
   'STAGE_04',
   'STAGE_05',
   'STAGE_06',
+  'STAGE_07',
 ] as const satisfies readonly BattleStageId[];
 export type TowerId = 0 | 1 | 2;
 export type TowerAimAnglesU16 = [number, number, number];
@@ -89,6 +92,9 @@ export interface EnemyDefinition {
   guardAuraRadiusPx?: number;
   phaseShellAboveHpBp?: number;
   phaseShellMaxHitDamageBp?: number;
+  etherealCycleTicks?: number;
+  etherealSolidTicks?: number;
+  etherealDamageTakenBp?: number;
 }
 
 export interface WaveGroupDefinition {

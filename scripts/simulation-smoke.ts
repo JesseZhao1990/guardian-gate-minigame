@@ -11,12 +11,14 @@ import {
   createStage04Bundle,
   createStage05Bundle,
   createStage06Bundle,
+  createStage07Bundle,
   STAGE_BUNDLES,
 } from '../src/core/content';
 import {
   BATTLE_STAGE_ORDER,
   DEFAULT_AIM_ANGLE_U16,
   ENEMY_FLAG_ENRAGED,
+  ENEMY_FLAG_ETHEREAL,
   ENEMY_FLAG_GUARD_AURA,
   ENEMY_FLAG_GUARDED,
   ENEMY_FLAG_PHASE_SHELL,
@@ -34,7 +36,10 @@ import { checkpointChecksum, decodeText, encodeText } from '../src/platform/wech
 import {
   BREACH_SEAL_MAX_Y,
   resolveBreachSealPlacement,
+  resolveCanvasFontWeight,
+  resolveCardOverlayLayout,
   resolveHomeStageCardLayout,
+  resolveViewportLayout,
 } from '../src/render/CanvasRenderer';
 
 const assert = {
@@ -492,6 +497,7 @@ assert.deepEqual(BATTLE_STAGE_ORDER, [
   'STAGE_04',
   'STAGE_05',
   'STAGE_06',
+  'STAGE_07',
 ]);
 assert.deepEqual(Object.keys(STAGE_BUNDLES), BATTLE_STAGE_ORDER);
 assert.equal(stage06Bundle.stage.id, 'STAGE_06');
@@ -543,6 +549,59 @@ try {
 }
 assert.ok(rejectedInvalidPhaseShell);
 
+const stage07Bundle = createStage07Bundle();
+assert.equal(stage07Bundle.stage.id, 'STAGE_07');
+assert.equal(stage07Bundle.stage.name, '山河残卷');
+assert.equal(stage07Bundle.route.towerAnchors.length, 3);
+assert.equal(stage07Bundle.tower.rangePx, 750);
+assert.equal(stage07Bundle.waves.length, 5);
+assert.ok(stage07Bundle.releaseId !== stage06Bundle.releaseId);
+assert.ok(stage07Bundle.configHash !== stage06Bundle.configHash);
+assert.ok(/^sha256:[0-9a-f]{64}$/.test(stage07Bundle.configHash));
+assert.ok(stage07Bundle.configHash !== `sha256:${'0'.repeat(64)}`);
+const stage07HashInput = createStage07Bundle();
+stage07HashInput.configHash = '';
+assert.equal(
+  stage07Bundle.configHash,
+  `sha256:${createHash('sha256').update(JSON.stringify(stage07HashInput)).digest('hex')}`,
+);
+assert.equal(
+  stage07Bundle.waves.reduce(
+    (total, wave) => total + wave.groups.reduce((count, group) => count + group.count, 0),
+    0,
+  ),
+  108,
+);
+assert.equal(stage07Bundle.waves[4]?.groups[1]?.enemyId, 'MON_DUAL_PHASE_BOOK_MOTH');
+assert.equal(stage07Bundle.enemies.MON_ETHEREAL_WALKER?.etherealCycleTicks, 150);
+assert.equal(stage07Bundle.enemies.MON_ETHEREAL_WALKER?.etherealSolidTicks, 90);
+assert.equal(stage07Bundle.enemies.MON_ETHEREAL_WALKER?.etherealDamageTakenBp, 3_000);
+assert.equal(stage07Bundle.enemies.MON_DUAL_PHASE_BOOK_MOTH?.etherealCycleTicks, 210);
+assert.equal(stage07Bundle.enemies.MON_DUAL_PHASE_BOOK_MOTH?.etherealSolidTicks, 105);
+assert.equal(stage07Bundle.enemies.MON_DUAL_PHASE_BOOK_MOTH?.etherealDamageTakenBp, 2_000);
+
+const incompleteEtherealBundle = createStage07Bundle();
+delete incompleteEtherealBundle.enemies.MON_DUAL_PHASE_BOOK_MOTH?.etherealDamageTakenBp;
+let rejectedIncompleteEthereal = false;
+try {
+  createBattleSimulation(incompleteEtherealBundle, 0xbad707);
+} catch (error) {
+  rejectedIncompleteEthereal = error instanceof Error && error.message.includes('all ethereal phase fields');
+}
+assert.ok(rejectedIncompleteEthereal);
+
+const invalidEtherealBundle = createStage07Bundle();
+const invalidEtherealBoss = invalidEtherealBundle.enemies.MON_DUAL_PHASE_BOOK_MOTH;
+if (!invalidEtherealBoss) throw new Error('Stage 07 invalid ethereal probe requires its boss.');
+invalidEtherealBoss.etherealSolidTicks = invalidEtherealBoss.etherealCycleTicks;
+let rejectedInvalidEthereal = false;
+try {
+  createBattleSimulation(invalidEtherealBundle, 0xbad708);
+} catch (error) {
+  rejectedInvalidEthereal = error instanceof Error && error.message.includes('invalid ethereal phase');
+}
+assert.ok(rejectedInvalidEthereal);
+
 const breachSealPlacements = [
   stage01Bundle,
   stage02Bundle,
@@ -550,6 +609,7 @@ const breachSealPlacements = [
   stage04Bundle,
   stage05Bundle,
   stage06Bundle,
+  stage07Bundle,
 ]
   .map((bundle) => resolveBreachSealPlacement(bundle.route));
 for (const placement of breachSealPlacements) {
@@ -574,6 +634,60 @@ for (const [index, layout] of stage06CardLayouts.entries()) {
     assert.ok(layout.x - (previous.x + previous.width) >= 14);
   }
 }
+
+const stage07CardLayouts = Array.from({ length: 7 }, (_, index) =>
+  resolveHomeStageCardLayout(7, index));
+for (const [index, layout] of stage07CardLayouts.entries()) {
+  assert.ok(layout.x >= 0);
+  assert.ok(layout.x + layout.width <= 1_810);
+  assert.ok(layout.hitY + layout.hitHeight <= 750);
+  for (const [viewportWidth, viewportHeight] of [[1_920, 1_080], [1_280, 720], [812, 375]]) {
+    const scale = Math.min(viewportWidth / 1_920, viewportHeight / 1_080);
+    assert.ok(layout.width * scale >= 44);
+    assert.ok(layout.hitHeight * scale >= 44);
+  }
+  if (index > 0) {
+    const previous = stage07CardLayouts[index - 1];
+    if (!previous) throw new Error('Seven-card rail requires contiguous layouts.');
+    assert.ok(layout.x - (previous.x + previous.width) >= 12);
+  }
+}
+
+const responsiveViewports = [
+  [1_920, 1_080],
+  [2_400, 1_080],
+  [852, 393],
+  [800, 360],
+  [840, 360],
+  [1_280, 800],
+  [1_024, 768],
+] as const;
+for (const [width, height] of responsiveViewports) {
+  const viewport = resolveViewportLayout(width, height);
+  assert.ok(viewport.scale > 0);
+  assert.ok(Math.abs(viewport.left * viewport.scale + viewport.offsetX) < 0.000_001);
+  assert.ok(Math.abs(viewport.top * viewport.scale + viewport.offsetY) < 0.000_001);
+  assert.ok(Math.abs(viewport.right * viewport.scale + viewport.offsetX - width) < 0.000_001);
+  assert.ok(Math.abs(viewport.bottom * viewport.scale + viewport.offsetY - height) < 0.000_001);
+  assert.ok(viewport.left <= 0 && viewport.top <= 0);
+  assert.ok(viewport.right >= 1_920 && viewport.bottom >= 1_080);
+
+  const cardLayout = resolveCardOverlayLayout(viewport);
+  for (const start of cardLayout.starts) {
+    assert.ok(start >= viewport.left);
+    assert.ok(start + cardLayout.cardWidth <= viewport.right);
+  }
+  assert.ok(cardLayout.starts[1] > cardLayout.starts[0] + cardLayout.cardWidth);
+  assert.ok(cardLayout.starts[2] > cardLayout.starts[1] + cardLayout.cardWidth);
+}
+
+const twentyByNineViewport = resolveViewportLayout(2_400, 1_080);
+assert.equal(twentyByNineViewport.left, -240);
+assert.equal(twentyByNineViewport.right, 2_160);
+assert.deepEqual(resolveCardOverlayLayout(twentyByNineViewport).starts, [90, 710, 1_330]);
+assert.equal(resolveCanvasFontWeight(450), 'normal');
+assert.equal(resolveCanvasFontWeight(650), 'bold');
+assert.equal(resolveCanvasFontWeight(720), 'bold');
 
 const stage03FirstVictory = runStageToVictory(createStage03Bundle(), 0x5a6e0303);
 const stage03SecondVictory = runStageToVictory(createStage03Bundle(), 0x5a6e0303);
@@ -838,6 +952,113 @@ assert.deepEqual(
   stage06SecondVictory.events.map((event) => [event.tick, event.type]),
 );
 
+function etherealProbeBundle(enabled: boolean): BattleBundleV1 {
+  const bundle = createStage07Bundle();
+  const firstWave = bundle.waves[0];
+  const boss = bundle.enemies.MON_DUAL_PHASE_BOOK_MOTH;
+  if (!firstWave || !boss) throw new Error('Stage 07 ethereal probe requires its first wave and boss.');
+  firstWave.groups = [{ enemyId: boss.id, count: 1, intervalTicks: 1 }];
+  firstWave.hpMultiplierBp = 10_000;
+  boss.maxHpMilli = 300_000;
+  boss.armorBp = 0;
+  boss.etherealCycleTicks = 60;
+  boss.etherealSolidTicks = 30;
+  boss.etherealDamageTakenBp = 2_000;
+  bundle.tower.rangePx = 5_000;
+  bundle.tower.attackIntervalTicks = 6;
+  bundle.tower.projectileSpeedPxPerSecond = 5_000;
+  bundle.tower.baseDamageMilli = 1_000;
+  bundle.tower.critChanceBp = 0;
+  if (!enabled) {
+    delete boss.etherealCycleTicks;
+    delete boss.etherealSolidTicks;
+    delete boss.etherealDamageTakenBp;
+  }
+  return bundle;
+}
+
+function runEtherealProbe(bundle: BattleBundleV1): {
+  solidDamage: number;
+  etherealDamage: number;
+  sawSolid: boolean;
+  sawEthereal: boolean;
+  restoredEthereal: boolean;
+} {
+  const simulation = createBattleSimulation(bundle, 0x707e7e);
+  let solidDamage = 0;
+  let etherealDamage = 0;
+  let sawSolid = false;
+  let sawEthereal = false;
+  let restoredEthereal = false;
+  for (let tick = 0; tick < 360 && (!solidDamage || !etherealDamage); tick += 1) {
+    const output = simulation.advanceTicks(1);
+    const enemy = simulation.getRenderSnapshot().entities.find((entity) => entity.renderKind === 'enemy');
+    if (!enemy) continue;
+    const ethereal = (enemy.flags & ENEMY_FLAG_ETHEREAL) !== 0;
+    if (ethereal) {
+      sawEthereal = true;
+      if (!restoredEthereal) {
+        const checkpoint = simulation.createCheckpoint();
+        const restored = createBattleSimulation(bundle, 0x707e7e, checkpoint);
+        restoredEthereal =
+          restored.getChecksum() === simulation.getChecksum() &&
+          ((restored.getRenderSnapshot().entities.find((entity) => entity.renderKind === 'enemy')?.flags ?? 0)
+            & ENEMY_FLAG_ETHEREAL) !== 0;
+      }
+    } else {
+      sawSolid = true;
+    }
+    const hit = output.events.find((event) => event.type === 'HIT');
+    if (hit?.type !== 'HIT') continue;
+    if (hit.damageMilli === 200) etherealDamage = hit.damageMilli;
+    if (hit.damageMilli === 1_000) solidDamage = hit.damageMilli;
+  }
+  return { solidDamage, etherealDamage, sawSolid, sawEthereal, restoredEthereal };
+}
+
+const etherealProbe = runEtherealProbe(etherealProbeBundle(true));
+const noEtherealProbe = runEtherealProbe(etherealProbeBundle(false));
+assert.equal(etherealProbe.solidDamage, 1_000);
+assert.equal(etherealProbe.etherealDamage, 200);
+assert.ok(etherealProbe.sawSolid);
+assert.ok(etherealProbe.sawEthereal);
+assert.ok(etherealProbe.restoredEthereal);
+assert.equal(noEtherealProbe.solidDamage, 1_000);
+assert.equal(noEtherealProbe.etherealDamage, 0);
+assert.equal(noEtherealProbe.sawEthereal, false);
+
+const stage07FirstVictory = runStageToVictory(createStage07Bundle(), 0x5a6e0707);
+const stage07SecondVictory = runStageToVictory(createStage07Bundle(), 0x5a6e0707);
+assertVictory(stage07FirstVictory, 108);
+assertVictory(stage07SecondVictory, 108);
+const stage07Distribution = stageCombatDistribution(stage07FirstVictory.events, stage07Bundle.waves.length);
+assert.equal(
+  stage07FirstVictory.events.filter(
+    (event) => event.type === 'SPAWN' && event.enemyId === 'MON_DUAL_PHASE_BOOK_MOTH',
+  ).length,
+  1,
+);
+for (const waveIndex of [0, 1, 2, 3, 4]) {
+  const towerAttacks = stage07Distribution.attacksByWave[waveIndex] ?? [];
+  assert.ok(towerAttacks.every((count) => count >= 8));
+  assert.ok(Math.max(...towerAttacks) / Math.max(1, Math.min(...towerAttacks)) <= 2.6);
+  assert.ok((stage07Distribution.peakAliveByWave[waveIndex] ?? 0) >= 5);
+  assert.ok((stage07Distribution.peakAliveByWave[waveIndex] ?? 0) <= 24);
+}
+assert.equal(stage07FirstVictory.simulation.getChecksum(), stage07SecondVictory.simulation.getChecksum());
+assert.deepEqual(
+  stage07FirstVictory.events.map((event) => [event.tick, event.type]),
+  stage07SecondVictory.events.map((event) => [event.tick, event.type]),
+);
+
+let rejectedStage06CheckpointInStage07 = false;
+try {
+  createBattleSimulation(createStage07Bundle(), 0x5a6e0707, stage06FirstVictory.simulation.createCheckpoint());
+} catch (error) {
+  rejectedStage06CheckpointInStage07 = error instanceof Error && error.message.includes('release does not match');
+}
+assert.ok(rejectedStage06CheckpointInStage07);
+
 let rejectedCrossStageCheckpoint = false;
 try {
   createBattleSimulation(createStage01Bundle(), 0x5a6e0202, stage02FirstVictory.simulation.createCheckpoint());
@@ -861,4 +1082,6 @@ console.log('✓ Stage 05 五波 94 名敌人、护阵光环与蚀日鲲皇首�
 console.log(`✓ Stage 05 三塔逐波出手 ${JSON.stringify(stage05Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage05Distribution.peakAliveByWave)}`);
 console.log('✓ Stage 06 五波 103 名敌人、相壳阈值/限伤/恢复与万相蜃母首领阶段通过');
 console.log(`✓ Stage 06 三塔逐波出手 ${JSON.stringify(stage06Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage06Distribution.peakAliveByWave)}`);
-console.log(`✓ 六关终点关印锚点统一位于 HUD 上方 ${JSON.stringify(breachSealPlacements.map((point) => [Math.round(point.x), point.y]))}`);
+console.log('✓ Stage 07 五波 108 名敌人、虚实轮转/恢复与双相天蠹首领阶段通过');
+console.log(`✓ Stage 07 三塔逐波出手 ${JSON.stringify(stage07Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage07Distribution.peakAliveByWave)}`);
+console.log(`✓ 七关终点关印锚点统一位于 HUD 上方 ${JSON.stringify(breachSealPlacements.map((point) => [Math.round(point.x), point.y]))}`);

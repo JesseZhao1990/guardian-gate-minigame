@@ -5,11 +5,35 @@ declare const wx: {
     windowWidth: number;
     windowHeight: number;
     pixelRatio: number;
+    safeArea?: {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      width: number;
+      height: number;
+    };
   };
   getSystemInfoSync(): {
     windowWidth: number;
     windowHeight: number;
     pixelRatio: number;
+    safeArea?: {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+      width: number;
+      height: number;
+    };
+  };
+  getMenuButtonBoundingClientRect?(): {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
   };
   getStorageSync(key: string): unknown;
   setStorageSync(key: string, value: unknown): void;

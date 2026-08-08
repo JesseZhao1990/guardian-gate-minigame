@@ -2,6 +2,7 @@ import {
   BATTLE_STAGE_ORDER,
   DEFAULT_AIM_ANGLE_U16,
   ENEMY_FLAG_ENRAGED,
+  ENEMY_FLAG_ETHEREAL,
   ENEMY_FLAG_FLYING,
   ENEMY_FLAG_GUARD_AURA,
   ENEMY_FLAG_GUARDED,
@@ -575,7 +576,8 @@ class BattleSimulationImpl implements BattleSimulation {
           (this.isEnemyEnraged(enemy, definition) ? ENEMY_FLAG_ENRAGED : 0) |
           (definition.guardAuraArmorBp !== undefined ? ENEMY_FLAG_GUARD_AURA : 0) |
           (this.guardAuraArmorBpFor(enemy) > 0 ? ENEMY_FLAG_GUARDED : 0) |
-          (this.isPhaseShellActive(enemy, definition) ? ENEMY_FLAG_PHASE_SHELL : 0),
+          (this.isPhaseShellActive(enemy, definition) ? ENEMY_FLAG_PHASE_SHELL : 0) |
+          (this.isEnemyEthereal(enemy, definition) ? ENEMY_FLAG_ETHEREAL : 0),
       });
     }
 
@@ -769,6 +771,29 @@ class BattleSimulationImpl implements BattleSimulation {
           definition.phaseShellMaxHitDamageBp! > 5_000)
       ) {
         throw new Error(`Enemy ${definition.id} has an invalid phase shell.`);
+      }
+      const etherealFields = [
+        definition.etherealCycleTicks,
+        definition.etherealSolidTicks,
+        definition.etherealDamageTakenBp,
+      ];
+      const definedEtherealFields = etherealFields.filter((value) => value !== undefined).length;
+      if (definedEtherealFields !== 0 && definedEtherealFields !== etherealFields.length) {
+        throw new Error(`Enemy ${definition.id} must define all ethereal phase fields.`);
+      }
+      if (
+        definedEtherealFields === etherealFields.length &&
+        (!Number.isInteger(definition.etherealCycleTicks) ||
+          definition.etherealCycleTicks! < 30 ||
+          definition.etherealCycleTicks! > 900 ||
+          !Number.isInteger(definition.etherealSolidTicks) ||
+          definition.etherealSolidTicks! <= 0 ||
+          definition.etherealSolidTicks! >= definition.etherealCycleTicks! ||
+          !Number.isInteger(definition.etherealDamageTakenBp) ||
+          definition.etherealDamageTakenBp! < 500 ||
+          definition.etherealDamageTakenBp! > 9_000)
+      ) {
+        throw new Error(`Enemy ${definition.id} has an invalid ethereal phase.`);
       }
     }
   }
@@ -1168,10 +1193,13 @@ class BattleSimulationImpl implements BattleSimulation {
       definition.armorBp + this.guardAuraArmorBpFor(enemy),
     );
     const damageAfterArmor = Math.max(1, mulBp(rawDamageMilli, 10_000 - effectiveArmorBp));
+    const damageAfterPhase = this.isEnemyEthereal(enemy, definition)
+      ? Math.max(1, mulBp(damageAfterArmor, definition.etherealDamageTakenBp ?? 10_000))
+      : damageAfterArmor;
     const phaseShellCap = this.isPhaseShellActive(enemy, definition)
       ? Math.max(1, mulBp(enemy.maxHpMilli, definition.phaseShellMaxHitDamageBp ?? 10_000))
-      : damageAfterArmor;
-    const actualDamage = Math.min(enemy.hpMilli, damageAfterArmor, phaseShellCap);
+      : damageAfterPhase;
+    const actualDamage = Math.min(enemy.hpMilli, damageAfterPhase, phaseShellCap);
     enemy.hpMilli -= actualDamage;
     this.state.damageDealtMilli += actualDamage;
     output.events.push({
@@ -1451,6 +1479,17 @@ class BattleSimulationImpl implements BattleSimulation {
   ): boolean {
     const thresholdBp = definition.phaseShellAboveHpBp;
     return thresholdBp !== undefined && enemy.hpMilli * 10_000 > enemy.maxHpMilli * thresholdBp;
+  }
+
+  private isEnemyEthereal(
+    enemy: EnemyState,
+    definition = this.enemyDefinition(enemy.definitionId),
+  ): boolean {
+    const cycleTicks = definition.etherealCycleTicks;
+    const solidTicks = definition.etherealSolidTicks;
+    if (cycleTicks === undefined || solidTicks === undefined) return false;
+    const phaseOffset = xorshift32(enemy.entityId >>> 0) % cycleTicks;
+    return (enemy.ageTicks + phaseOffset) % cycleTicks >= solidTicks;
   }
 
   private guardAuraArmorBpFor(enemy: EnemyState): number {

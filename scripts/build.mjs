@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
-const stageIds = ['STAGE_01', 'STAGE_02', 'STAGE_03', 'STAGE_04', 'STAGE_05', 'STAGE_06'];
+const stageIds = ['STAGE_01', 'STAGE_02', 'STAGE_03', 'STAGE_04', 'STAGE_05', 'STAGE_06', 'STAGE_07'];
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
@@ -32,6 +32,7 @@ const runtimeAssetFiles = [
   'stage-04/background/STAGE_04_BACKGROUND.jpg',
   'stage-05/background/STAGE_05_BACKGROUND.jpg',
   'stage-06/background/STAGE_06_BACKGROUND.jpg',
+  'stage-07/background/STAGE_07_BACKGROUND.jpg',
   'stage-01/enemies/MON_SWIFT_EEL_BATTLE_V2.png',
   'stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
   'stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
@@ -39,6 +40,7 @@ const runtimeAssetFiles = [
   'stage-04/enemies/MON_ABYSS_WYRM.png',
   'stage-05/enemies/MON_ECLIPSE_KUN_EMPEROR.png',
   'stage-06/enemies/MON_MIRAGE_MOTHER.png',
+  'stage-07/enemies/MON_DUAL_PHASE_BOOK_MOTH.png',
   'stage-01/towers/TOWER_SOLAR_BASE_V2.png',
   'stage-01/towers/TOWER_SOLAR_HEAD_V2.png',
   'stage-01/towers/TOWER_FROST_BASE_V2.png',

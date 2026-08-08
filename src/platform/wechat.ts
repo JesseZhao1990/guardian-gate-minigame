@@ -11,6 +11,17 @@ export interface RuntimeSize {
   width: number;
   height: number;
   pixelRatio: number;
+  safeArea: RuntimeRect;
+  menuButtonRect?: RuntimeRect;
+}
+
+export interface RuntimeRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
 }
 
 export interface MiniGameRuntime {
@@ -158,12 +169,46 @@ export function decodeText(value: Uint8Array): string {
   return new Utf8Decoder().decode(value);
 }
 
+function normalizeRuntimeRect(value: unknown, fallback?: RuntimeRect): RuntimeRect | undefined {
+  if (!value || typeof value !== 'object') return fallback;
+  const candidate = value as Partial<RuntimeRect>;
+  if (
+    typeof candidate.left !== 'number' ||
+    typeof candidate.top !== 'number' ||
+    typeof candidate.right !== 'number' ||
+    typeof candidate.bottom !== 'number'
+  ) {
+    return fallback;
+  }
+  return {
+    left: candidate.left,
+    top: candidate.top,
+    right: candidate.right,
+    bottom: candidate.bottom,
+    width: typeof candidate.width === 'number' ? candidate.width : candidate.right - candidate.left,
+    height: typeof candidate.height === 'number' ? candidate.height : candidate.bottom - candidate.top,
+  };
+}
+
 function readWindowInfo(): RuntimeSize {
   const info = typeof wx.getWindowInfo === 'function' ? wx.getWindowInfo() : wx.getSystemInfoSync();
+  const width = Math.max(1, info.windowWidth);
+  const height = Math.max(1, info.windowHeight);
+  const fullWindow = { left: 0, top: 0, right: width, bottom: height, width, height };
+  let menuButtonRect: RuntimeRect | undefined;
+  try {
+    menuButtonRect = typeof wx.getMenuButtonBoundingClientRect === 'function'
+      ? normalizeRuntimeRect(wx.getMenuButtonBoundingClientRect())
+      : undefined;
+  } catch {
+    menuButtonRect = undefined;
+  }
   return {
-    width: Math.max(1, info.windowWidth),
-    height: Math.max(1, info.windowHeight),
+    width,
+    height,
     pixelRatio: Math.max(1, Math.min(info.pixelRatio || 1, 3)),
+    safeArea: normalizeRuntimeRect(info.safeArea, fullWindow) ?? fullWindow,
+    ...(menuButtonRect ? { menuButtonRect } : {}),
   };
 }
 
