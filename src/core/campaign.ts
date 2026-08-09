@@ -29,6 +29,7 @@ function contiguousCompletedStages(value: unknown): BattleStageId[] {
   const requested = new Set(value.filter(isBattleStageId));
   const completed: BattleStageId[] = [];
   for (const stageId of STAGE_ORDER) {
+    if (stageId === 'STAGE_08') break;
     if (!requested.has(stageId)) break;
     completed.push(stageId);
   }
@@ -109,6 +110,9 @@ export function completeCampaignStage(
   updatedAt = progress.updatedAt,
 ): CampaignProgressV1 {
   const normalized = normalizeCampaignProgress(progress, updatedAt);
+  // The terminal endless challenge settles to a score instead of being completed.
+  // Keep it as the one unlocked stage after the finite campaign prefix.
+  if (stageId === 'STAGE_08') return normalized;
   if (!normalized.unlockedStageIds.includes(stageId)) return normalized;
   const completedStageIds = [...normalized.completedStageIds];
   if (!completedStageIds.includes(stageId)) completedStageIds.push(stageId);
