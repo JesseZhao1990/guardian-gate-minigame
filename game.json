@@ -1,6 +1,36 @@
 {
   "deviceOrientation": "landscape",
   "showStatusBar": false,
+  "subpackages": [
+    {
+      "name": "stage-02",
+      "root": "packages/stage-02"
+    },
+    {
+      "name": "stage-03",
+      "root": "packages/stage-03"
+    },
+    {
+      "name": "stage-04",
+      "root": "packages/stage-04"
+    },
+    {
+      "name": "stage-05",
+      "root": "packages/stage-05"
+    },
+    {
+      "name": "stage-06",
+      "root": "packages/stage-06"
+    },
+    {
+      "name": "stage-07",
+      "root": "packages/stage-07"
+    },
+    {
+      "name": "stage-08",
+      "root": "packages/stage-08"
+    }
+  ],
   "networkTimeout": {
     "request": 10000,
     "connectSocket": 10000,
@@ -8,4 +38,3 @@
     "downloadFile": 10000
   }
 }
-

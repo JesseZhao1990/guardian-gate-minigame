@@ -1,3 +1,31 @@
+interface WxSubpackageResult {
+  errMsg?: string;
+}
+
+interface WxSubpackageProgressUpdate {
+  progress: number;
+  totalBytesWritten: number;
+  totalBytesExpectedToWrite: number;
+}
+
+interface LoadSubpackageTask {
+  onProgressUpdate(listener: (update: WxSubpackageProgressUpdate) => void): void;
+  offProgressUpdate?(listener?: (update: WxSubpackageProgressUpdate) => void): void;
+}
+
+interface PreDownloadSubpackageTask extends LoadSubpackageTask {}
+
+interface WxSubpackageOptions {
+  name: string;
+  success?: (result: WxSubpackageResult) => void;
+  fail?: (result: WxSubpackageResult) => void;
+  complete?: (result: WxSubpackageResult) => void;
+}
+
+interface WxPreDownloadSubpackageOptions extends WxSubpackageOptions {
+  packageType?: 'normal' | 'workers';
+}
+
 declare const wx: {
   createCanvas(): any;
   createInnerAudioContext(): any;
@@ -50,4 +78,8 @@ declare const wx: {
   onAudioInterruptionBegin?(listener: () => void): void;
   onAudioInterruptionEnd?(listener: () => void): void;
   vibrateShort?(options?: { type?: 'heavy' | 'medium' | 'light' }): void;
+  loadSubpackage?(options: WxSubpackageOptions): LoadSubpackageTask;
+  preDownloadSubpackage?(
+    options: WxPreDownloadSubpackageOptions,
+  ): PreDownloadSubpackageTask;
 };

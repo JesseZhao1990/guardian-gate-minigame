@@ -5,7 +5,26 @@ import { build } from 'esbuild';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
-const stageIds = ['STAGE_01', 'STAGE_02', 'STAGE_03', 'STAGE_04', 'STAGE_05', 'STAGE_06', 'STAGE_07'];
+const stageIds = [
+  'STAGE_01',
+  'STAGE_02',
+  'STAGE_03',
+  'STAGE_04',
+  'STAGE_05',
+  'STAGE_06',
+  'STAGE_07',
+  'STAGE_08',
+];
+const stagePackages = stageIds.slice(1).map((stageId) => {
+  const ordinal = stageId.slice(-2);
+  const name = `stage-${ordinal}`;
+  return {
+    stageId,
+    name,
+    root: `packages/${name}`,
+    assetRoot: `stage-${ordinal}`,
+  };
+});
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
@@ -25,22 +44,11 @@ await build({
   }
 });
 
-const runtimeAssetFiles = [
+const mainPackageAssetFiles = [
   'stage-01/background/STAGE_01_BACKGROUND.jpg',
-  'stage-02/background/STAGE_02_BACKGROUND.jpg',
-  'stage-03/background/STAGE_03_BACKGROUND.jpg',
-  'stage-04/background/STAGE_04_BACKGROUND.jpg',
-  'stage-05/background/STAGE_05_BACKGROUND.jpg',
-  'stage-06/background/STAGE_06_BACKGROUND.jpg',
-  'stage-07/background/STAGE_07_BACKGROUND.jpg',
   'stage-01/enemies/MON_SWIFT_EEL_BATTLE_V2.png',
   'stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
   'stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
-  'stage-03/enemies/MON_DRAGON_TORTOISE.png',
-  'stage-04/enemies/MON_ABYSS_WYRM.png',
-  'stage-05/enemies/MON_ECLIPSE_KUN_EMPEROR.png',
-  'stage-06/enemies/MON_MIRAGE_MOTHER.png',
-  'stage-07/enemies/MON_DUAL_PHASE_BOOK_MOTH.png',
   'stage-01/towers/TOWER_SOLAR_BASE_V2.png',
   'stage-01/towers/TOWER_SOLAR_HEAD_V2.png',
   'stage-01/towers/TOWER_FROST_BASE_V2.png',
@@ -57,6 +65,15 @@ const runtimeAssetFiles = [
   'stage-01/vfx/VFX_BASIC_COMBAT__NORMAL_HIT.png',
   'stage-01/vfx/VFX_BASIC_COMBAT__CRITICAL_HIT.png',
   'stage-01/vfx/VFX_BASIC_COMBAT__DEATH_DISSOLVE.png',
+  'stage-01/vfx/VFX_BASIC_COMBAT__ARMOR_HIT.png',
+  'stage-01/vfx/VFX_BASIC_COMBAT__ARROW_TRAIL.png',
+  'stage-01/vfx/VFX_BASIC_COMBAT__MULTISHOT_VOLLEY.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__BREACH.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__DEFEAT.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__LEVEL_UP.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__REVIVE.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__VICTORY.png',
+  'stage-01/vfx/VFX_STATUS_SET__REVIVE_PROTECT.png',
   'stage-01/audio/SFX_BATTLE_01.m4a',
   'stage-01/audio/SFX_BATTLE_03.m4a',
   'stage-01/audio/SFX_BATTLE_04.m4a',
@@ -67,10 +84,24 @@ const runtimeAssetFiles = [
   'stage-01/audio/STG_VICTORY.m4a',
 ];
 
-for (const file of runtimeAssetFiles) {
+for (const file of mainPackageAssetFiles) {
   const target = resolve(dist, 'assets', file);
   await mkdir(dirname(target), { recursive: true });
   await cp(resolve(root, 'assets', file), target);
+}
+
+for (const stagePackage of stagePackages) {
+  const packageRoot = resolve(dist, stagePackage.root);
+  const targetAssetRoot = resolve(packageRoot, 'assets', stagePackage.assetRoot);
+  await mkdir(packageRoot, { recursive: true });
+  await cp(resolve(root, 'assets', stagePackage.assetRoot), targetAssetRoot, { recursive: true });
+  const packageEntry = [
+    "'use strict';",
+    'GameGlobal.__guardianGateLoadedSubpackages = GameGlobal.__guardianGateLoadedSubpackages || {};',
+    `GameGlobal.__guardianGateLoadedSubpackages['${stagePackage.name}'] = true;`,
+    '',
+  ].join('\n');
+  await writeFile(resolve(packageRoot, 'game.js'), packageEntry);
 }
 await cp(resolve(root, 'game.json'), resolve(dist, 'game.json'));
 
@@ -81,8 +112,15 @@ const buildMeta = {
   source: 'guardian-gate-minigame',
   entry: 'src/game.ts',
   stageIds,
+  subpackages: stagePackages.map(({ stageId, name, root: packageRoot, assetRoot }) => ({
+    stageId,
+    name,
+    root: packageRoot,
+    assetRoot,
+  })),
 };
 await writeFile(resolve(dist, 'build-meta.json'), `${JSON.stringify(buildMeta, null, 2)}\n`);
 
 const gameSource = await readFile(resolve(dist, 'game.js'), 'utf8');
 console.log(`✓ 微信小游戏构建完成：${Buffer.byteLength(gameSource)} bytes JavaScript`);
+console.log(`✓ Stage 02–08 普通分包已生成：${stagePackages.map(({ root: packageRoot }) => packageRoot).join(', ')}`);
