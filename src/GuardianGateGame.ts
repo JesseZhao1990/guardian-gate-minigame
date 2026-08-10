@@ -13,6 +13,10 @@ import {
 } from './core/campaign';
 import { resolveStageBundleForSeed, STAGE_BUNDLES, STAGE_ORDER } from './core/content';
 import {
+  LEGACY_WARLESS_CONFIG_HASH_BY_STAGE,
+  isLegacyWarlessConfigHash,
+} from './core/content-compat';
+import {
   type BattleBundleV1,
   type BattleCommand,
   type BattleEvent,
@@ -24,7 +28,10 @@ import {
   TICKS_PER_SECOND,
   type TowerId,
 } from './core/contracts';
-import { LocalPracticeAuthority } from './core/local-authority';
+import {
+  LocalPracticeAuthority,
+  type LocalAuthoritySnapshotV1,
+} from './core/local-authority';
 import {
   checkpointChecksum,
   compareEndlessRecords,
@@ -95,6 +102,7 @@ export class GuardianGateGame {
   private towerDamageBuckets: TowerDamageBucket[] = [];
   private strategyPanelOpen = false;
   private strategyPanelResumeOnClose = false;
+  private selectedShopCardId?: string;
   private loadingMessage = '正在校验关卡与原创资产…';
   private loadingProgress?: number;
   private homeError?: string;
@@ -190,6 +198,7 @@ export class GuardianGateGame {
       selectedTowerId: this.selectedTowerId,
       towerMetrics: this.getTowerMetrics(),
       strategyPanelOpen: this.strategyPanelOpen,
+      ...(this.selectedShopCardId ? { selectedShopCardId: this.selectedShopCardId } : {}),
       ...(this.hud.activeOffer && this.authority
         ? { rerollsRemaining: this.authority.getRerollsRemaining(this.currentOfferOrdinal) }
         : {}),
@@ -294,11 +303,13 @@ export class GuardianGateGame {
         this.seed,
         saved ? encodeText(saved.checkpointText) : undefined,
       );
-      this.authority = new LocalPracticeAuthority(
-        bundle,
-        this.seed,
-        saved?.authoritySnapshot,
-      );
+      const migratedWarlessSave = saved !== undefined &&
+        saved.configHash !== bundle.configHash &&
+        isLegacyWarlessConfigHash(bundle.stage.id, saved.configHash);
+      const authoritySnapshot = migratedWarlessSave
+        ? this.migrateWarlessAuthoritySnapshot(bundle, this.seed, saved.authoritySnapshot)
+        : saved?.authoritySnapshot;
+      this.authority = new LocalPracticeAuthority(bundle, this.seed, authoritySnapshot);
       const initialHud = this.simulation.getHudProjection();
       this.commandSequence = Math.max(1_000_000, initialHud.lastCommandSeq);
       this.snapshotSequence = 0;
@@ -330,9 +341,11 @@ export class GuardianGateGame {
       this.towerDamageBuckets = [];
       this.strategyPanelOpen = false;
       this.strategyPanelResumeOnClose = false;
+      this.selectedShopCardId = undefined;
       this.loadingProgress = undefined;
       this.homeError = undefined;
       this.screen = 'battle';
+      if (migratedWarlessSave) this.saveBattle();
       this.lastFrameAt = Date.now();
       this.refreshBattleProjection();
       this.audio.start();
@@ -355,7 +368,13 @@ export class GuardianGateGame {
 
   private refreshBattleProjection(): void {
     if (!this.simulation) return;
+    const previousOfferId = this.hud?.activeOffer?.offerId;
     this.hud = this.simulation.getHudProjection();
+    const nextOfferId = this.hud.activeOffer?.offerId;
+    if (!nextOfferId || nextOfferId !== previousOfferId) this.selectedShopCardId = undefined;
+    if (!this.hud.activeTowerIds.includes(this.selectedTowerId)) {
+      this.selectedTowerId = this.hud.activeTowerIds[0] ?? 0;
+    }
     this.snapshotSequence += 1;
     this.snapshot = this.simulation.getRenderSnapshot(1, this.snapshotSequence);
     if (this.hud.activeOffer) this.currentOfferOrdinal = Math.max(1, this.hud.level);
@@ -375,6 +394,14 @@ export class GuardianGateGame {
         const snapshot = this.simulation.getRenderSnapshot(1, ++this.snapshotSequence);
         this.renderer.pushEvents(output.events, snapshot);
         this.audio.playEvents(output.events);
+        const unlockedTower = output.events.find(
+          (event): event is Extract<BattleEvent, { type: 'TOWER_UNLOCKED' }> =>
+            event.type === 'TOWER_UNLOCKED',
+        );
+        if (unlockedTower) {
+          this.selectedTowerId = unlockedTower.towerId;
+        }
+        if (output.events.some((event) => event.type === 'CARD_PURCHASED')) this.saveBattle();
         const endlessSettlement = output.events.find(
           (event): event is Extract<BattleEvent, { type: 'ENDLESS_SETTLED' }> =>
             event.type === 'ENDLESS_SETTLED',
@@ -487,9 +514,11 @@ export class GuardianGateGame {
 
   private updateAim(point: DesignPoint, towerId: TowerId): void {
     if (!this.simulation || this.hud?.flowState !== 'running') return;
+    if (!this.hud.activeTowerIds.includes(towerId)) return;
+    const worldPoint = this.renderer.toBattleWorldPoint(point);
     const clamped = {
-      x: Math.max(0, Math.min(1920, point.x)),
-      y: Math.max(0, Math.min(1080, point.y)),
+      x: Math.max(0, Math.min(1920, worldPoint.x)),
+      y: Math.max(0, Math.min(1200, worldPoint.y)),
     };
     const anchor = this.activeBundle.route.towerAnchors[towerId];
     const deltaX = clamped.x - anchor.x;
@@ -542,7 +571,21 @@ export class GuardianGateGame {
     } else if (id === 'hud-speed' && this.hud) {
       this.issueCommand({ type: 'SET_SPEED', value: this.hud.speed === 1 ? 2 : 1 });
     } else if (id === 'hud-overdrive' && this.hud?.flowState === 'running') {
+      if (!this.hud.activeTowerIds.includes(this.selectedTowerId)) return;
       this.issueCommand({ type: 'ACTIVATE_OVERDRIVE', towerId: this.selectedTowerId });
+    } else if (id === 'hud-shop' && this.hud?.mode === 'fixed' && this.hud.shopAvailable) {
+      this.selectedShopCardId = undefined;
+      this.issueCommand({ type: 'OPEN_SHOP' });
+    } else if (id === 'shop-close' && this.hud?.mode === 'fixed') {
+      this.selectedShopCardId = undefined;
+      this.issueCommand({ type: 'CLOSE_SHOP' });
+    } else if (id === 'shop-confirm' && this.hud?.mode === 'fixed') {
+      const cardId = this.selectedShopCardId;
+      const preview = cardId
+        ? this.hud.offerPreviews?.find((candidate) => candidate.cardId === cardId)
+        : undefined;
+      if (!cardId || !preview || preview.warPointCost > this.hud.warPointsBalance) return;
+      this.chooseCard(cardId);
     } else if (id === 'hud-pause') {
       if (this.hud?.flowState === 'running') this.issueCommand({ type: 'PAUSE' });
       else if (this.hud?.flowState === 'paused') this.issueCommand({ type: 'RESUME' });
@@ -554,15 +597,29 @@ export class GuardianGateGame {
       this.closeStrategyPanel();
     } else if (id.startsWith('strategy-tower:')) {
       const towerId = Number(id.slice('strategy-tower:'.length));
-      if (towerId === 0 || towerId === 1 || towerId === 2) this.selectedTowerId = towerId;
+      if (
+        (towerId === 0 || towerId === 1 || towerId === 2) &&
+        this.hud?.activeTowerIds.includes(towerId)
+      ) {
+        this.selectedTowerId = towerId;
+      }
     } else if (id === 'overlay-resume') {
       this.issueCommand({ type: 'RESUME' });
     } else if (id === 'overlay-revive') {
       this.revive();
     } else if (id === 'card-reroll') {
+      this.selectedShopCardId = undefined;
       this.rerollCards();
     } else if (id.startsWith('card:')) {
-      this.chooseCard(id.slice('card:'.length));
+      const cardId = id.slice('card:'.length);
+      if (this.hud?.mode === 'fixed') {
+        const preview = this.hud.offerPreviews?.find((candidate) => candidate.cardId === cardId);
+        if (!preview || preview.warPointCost > this.hud.warPointsBalance) return;
+        this.selectedShopCardId = cardId;
+        wx.vibrateShort?.({ type: 'light' });
+      } else {
+        this.chooseCard(cardId);
+      }
     }
   }
 
@@ -586,6 +643,7 @@ export class GuardianGateGame {
     this.towerDamageBuckets = [];
     this.strategyPanelOpen = false;
     this.strategyPanelResumeOnClose = false;
+    this.selectedShopCardId = undefined;
     this.refreshSavedBattles();
     void this.restoreCampaignSelection();
   }
@@ -619,7 +677,9 @@ export class GuardianGateGame {
     this.savedBattles.clear();
     for (const stageId of STAGE_ORDER) {
       const baseBundle = STAGE_BUNDLES[stageId];
-      const candidate = this.store.load(stageId, baseBundle.configHash);
+      const legacyHash = LEGACY_WARLESS_CONFIG_HASH_BY_STAGE[stageId];
+      const candidate = this.store.load(stageId, baseBundle.configHash) ??
+        (legacyHash === undefined ? undefined : this.store.load(stageId, legacyHash));
       if (!candidate) continue;
       try {
         const bundle = resolveStageBundleForSeed(stageId, candidate.seed);
@@ -664,6 +724,30 @@ export class GuardianGateGame {
     if (repairedProgress) {
       this.campaign = this.campaignStore.save(this.campaign);
     }
+  }
+
+  private migrateWarlessAuthoritySnapshot(
+    bundle: BattleBundleV1,
+    seed: number,
+    snapshot: LocalAuthoritySnapshotV1,
+  ): LocalAuthoritySnapshotV1 {
+    return {
+      schemaVersion: 1,
+      releaseId: bundle.releaseId,
+      configHash: bundle.configHash,
+      initialSeed: seed >>> 0,
+      rngState: snapshot.rngState,
+      authoritySeq: snapshot.authoritySeq,
+      offerSerial: 0,
+      offersSincePurple: 0,
+      purplePityAdvancedOnChoice: true,
+      consecutiveGreenSlots: 0,
+      rerolledOfferOrdinals: [],
+      eligibleEffectsByOrdinal: [],
+      activeOfferByOrdinal: [],
+      acceptedChoices: [],
+      offers: [],
+    };
   }
 
   private async selectStage(stageId: BattleStageId): Promise<void> {

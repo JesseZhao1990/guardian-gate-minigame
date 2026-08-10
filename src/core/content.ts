@@ -11,21 +11,21 @@ import type {
 import { BATTLE_STAGE_ORDER } from './contracts';
 
 const STAGE_01_RELEASE_ID = 'GG_S01_ALPHA_V2';
-const STAGE_01_CONFIG_HASH = 'sha256:4f52178c96e24300b9136d8e23453f32ab63d16d924fc514b69ec837fab0aa6e';
+const STAGE_01_CONFIG_HASH = 'sha256:625f721bee82c5e1a4013c313d91e49325fa905bc09e32b59e6dd3327f47e022';
 const STAGE_02_RELEASE_ID = 'GG_S02_ALPHA_V4';
-const STAGE_02_CONFIG_HASH = 'sha256:1a080eb280c11d6a9ba27a7ac779c0e9a32b2bf7d40cc6185d840308819109a9';
+const STAGE_02_CONFIG_HASH = 'sha256:cd35b88bfed572e3b2614a05427f5934e7b3460e547d6def51561b6ef00a060c';
 const STAGE_03_RELEASE_ID = 'GG_S03_ALPHA_V3';
-const STAGE_03_CONFIG_HASH = 'sha256:6b22bcb0c565b5b3545172a51574e13aff9fc685a9b4d63904981ee29456bf03';
+const STAGE_03_CONFIG_HASH = 'sha256:f499da5202c13130917d478bfc803c7e5861d88f652d469d148b94b13c47ff88';
 const STAGE_04_RELEASE_ID = 'GG_S04_ALPHA_V3';
-const STAGE_04_CONFIG_HASH = 'sha256:8d86fb92c643506828eda3d46affe43c3c75555ff5bd9ebcbe6f8cc968deb60e';
+const STAGE_04_CONFIG_HASH = 'sha256:50f9d6d347498b96e9fb11a9de7f0e672b1f5b0d59d879ac87dad174cba1689c';
 const STAGE_05_RELEASE_ID = 'GG_S05_ALPHA_V3';
-const STAGE_05_CONFIG_HASH = 'sha256:ca2d5e8a169c2d1c291acc158b873e4a38c38e22aab9fc7ca6212bff9a4a097d';
+const STAGE_05_CONFIG_HASH = 'sha256:f5e89e97765a33cc222809e4b9f2e31db09df8750f79f74b58487c2de763098a';
 const STAGE_06_RELEASE_ID = 'GG_S06_ALPHA_V2';
-const STAGE_06_CONFIG_HASH = 'sha256:a5d9dc6ddbfea467cf0b6fe250aa958e4c9cb3c6b48c8a2d0c5a519b4c4989bb';
+const STAGE_06_CONFIG_HASH = 'sha256:e73d0601162822ad2623a946a4a377e4ff465304c646f7ff21824d64b2618f97';
 const STAGE_07_RELEASE_ID = 'GG_S07_ALPHA_V2';
-const STAGE_07_CONFIG_HASH = 'sha256:e7e5da7ff7d8e12d803a3430b944a3f577acc4c005e1f7f31b94bd84e71985d5';
-const STAGE_08_RELEASE_ID = 'GG_S08_ENDLESS_V1';
-const STAGE_08_CONFIG_HASH = 'sha256:baa8db5bbf4e96f37c2f21d584de955cb9deaab67536f8b6f7568f85d78ed6d1';
+const STAGE_07_CONFIG_HASH = 'sha256:63ee858fe072a9fae6c39a7903d81e3ed30b6464442c7ed574c5b6686acbd90a';
+const STAGE_08_RELEASE_ID = 'GG_S08_ENDLESS_V2';
+const STAGE_08_CONFIG_HASH = 'sha256:2a02b1bc3bcccfc34b8ed396fab71e4beedad8cbcf9cf918ea87ccccf6fd06db';
 
 // Quantized offline from: 1 + 0.11 * minute + 0.018 * minute^1.35.
 // Index is elapsed whole seconds (0...1200); battle ticks only perform integer lookup.
@@ -674,13 +674,55 @@ const endlessCards: CardDefinition[] = cardSource.flatMap((source) =>
   }),
 );
 
-const campaignCards: CardDefinition[] = endlessCards.map((card) => {
-  if (card.effectId !== 'arrow-count' && card.effectId !== 'penetration') return card;
-  return {
-    ...card,
-    valueInt: card.quality === 'P' ? 2 : 1,
-  };
-});
+const campaignWarPointCosts: Record<
+  Extract<CardEffectId, 'tower-damage' | 'tower-frequency' | 'arrow-count' | 'penetration'>,
+  [number, number, number]
+> = {
+  'tower-damage': [18, 30, 48],
+  'tower-frequency': [16, 28, 44],
+  'arrow-count': [65, 95, 140],
+  penetration: [60, 90, 130],
+};
+
+const campaignStatCards: CardDefinition[] = endlessCards
+  .filter((card) => card.effectId !== 'crit-rate' && card.effectId !== 'crit-damage')
+  .map((card) => {
+    const costs = campaignWarPointCosts[card.effectId as keyof typeof campaignWarPointCosts];
+    const qualityIndex = qualities.indexOf(card.quality);
+    return {
+      ...card,
+      ...(card.effectId === 'arrow-count' || card.effectId === 'penetration'
+        ? { valueInt: card.quality === 'P' ? 2 : 1 }
+        : {}),
+      warPointCost: costs[qualityIndex] ?? costs[0],
+    };
+  });
+
+const campaignCriticalMasteryCards: CardDefinition[] = qualities.map((quality, qualityIndex) => ({
+  id: `CARD_BASIC_CRITICAL_MASTERY_${quality}`,
+  name: '会心术',
+  quality,
+  effectId: 'critical-mastery',
+  valueBp: [400, 660, 1_000][qualityIndex] ?? 0,
+  secondaryValueBp: [1_200, 1_980, 3_000][qualityIndex] ?? 0,
+  warPointCost: [14, 24, 38][qualityIndex] ?? 14,
+  iconAssetId: 'MOD_CRIT_RATE',
+}));
+
+export const CARD_TOWER_REINFORCEMENT: CardDefinition = {
+  id: 'CARD_TOWER_REINFORCEMENT',
+  name: '增援箭塔',
+  quality: 'G',
+  effectId: 'tower-count',
+  valueInt: 1,
+  iconAssetId: 'MOD_ARROW_COUNT',
+};
+
+const campaignCards: CardDefinition[] = [
+  ...campaignStatCards,
+  ...campaignCriticalMasteryCards,
+  CARD_TOWER_REINFORCEMENT,
+];
 
 const stage02RoutePoints: Point[] = [
   { x: 720, y: -70 },
@@ -749,9 +791,9 @@ const stage02Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N02_05',
     index: 5,
-    hpMultiplierBp: 46_000,
+    hpMultiplierBp: 42_000,
     expMultiplierBp: 6_500,
-    speedMultiplierBp: 14_000,
+    speedMultiplierBp: 13_000,
     groups: [
       { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 11 },
       { enemyId: 'MON_SHELL_CRAB', count: 8, intervalTicks: 14 },
@@ -1013,9 +1055,9 @@ const stage05Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N05_05',
     index: 5,
-    hpMultiplierBp: 56_000,
+    hpMultiplierBp: 50_000,
     expMultiplierBp: 7_800,
-    speedMultiplierBp: 12_180,
+    speedMultiplierBp: 11_600,
     groups: [
       { enemyId: 'MON_ECLIPSE_KUN_EMPEROR', count: 1, intervalTicks: 1 },
       { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 4, intervalTicks: 10 },
@@ -1067,7 +1109,7 @@ const stage06Waves: WaveDefinition[] = [
     index: 2,
     hpMultiplierBp: 15_000,
     expMultiplierBp: 5_125,
-    speedMultiplierBp: 10_500,
+    speedMultiplierBp: 10_000,
     groups: [
       { enemyId: 'MON_PHASE_SHELL_WEAVER', count: 4, intervalTicks: 12 },
       { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 11 },
@@ -1187,9 +1229,9 @@ const stage07Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N07_04',
     index: 4,
-    hpMultiplierBp: 52_000,
+    hpMultiplierBp: 49_000,
     expMultiplierBp: 7_000,
-    speedMultiplierBp: 16_500,
+    speedMultiplierBp: 14_500,
     groups: [
       { enemyId: 'MON_ETHEREAL_WALKER_S07_LATE', count: 10, intervalTicks: 9 },
       { enemyId: 'MON_SHELL_CRAB_S07_LATE', count: 8, intervalTicks: 8 },
@@ -1201,9 +1243,9 @@ const stage07Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N07_05',
     index: 5,
-    hpMultiplierBp: 60_000,
+    hpMultiplierBp: 55_000,
     expMultiplierBp: 7_000,
-    speedMultiplierBp: 22_500,
+    speedMultiplierBp: 18_000,
     groups: [
       { enemyId: 'MON_DUAL_PHASE_BOOK_MOTH', count: 1, intervalTicks: 1 },
       { enemyId: 'MON_ETHEREAL_WALKER_S07_LATE', count: 11, intervalTicks: 8 },
@@ -1216,64 +1258,77 @@ const stage07Waves: WaveDefinition[] = [
 ];
 
 const stage08TowerAnchors: [Point, Point, Point] = [
-  { x: 600, y: 300 },
-  { x: 1400, y: 320 },
-  { x: 1040, y: 810 },
+  { x: 720, y: 420 },
+  { x: 1080, y: 570 },
+  { x: 1350, y: 680 },
 ];
 
 const stage08Routes: [RouteDefinition, RouteDefinition, RouteDefinition] = [
   {
     id: 'ROUTE_STAGE_08_ABYSS_A',
     points: [
-      { x: -80, y: 140 },
-      { x: 170, y: 165 },
-      { x: 400, y: 235 },
-      { x: 620, y: 380 },
-      { x: 850, y: 470 },
-      { x: 1080, y: 425 },
-      { x: 1280, y: 500 },
-      { x: 1425, y: 635 },
-      { x: 1570, y: 755 },
-      { x: 1760, y: 855 },
-      { x: 1980, y: 965 },
+      { x: 300, y: -70 },
+      { x: 280, y: 15 },
+      { x: 225, y: 100 },
+      { x: 195, y: 205 },
+      { x: 210, y: 310 },
+      { x: 285, y: 410 },
+      { x: 405, y: 505 },
+      { x: 545, y: 580 },
+      { x: 710, y: 655 },
+      { x: 890, y: 730 },
+      { x: 1080, y: 790 },
+      { x: 1280, y: 845 },
+      { x: 1480, y: 895 },
+      { x: 1680, y: 960 },
+      { x: 1885, y: 1035 },
     ],
     towerAnchors: stage08TowerAnchors,
-    breachPoint: { x: 1980, y: 965 },
+    breachPoint: { x: 1885, y: 1035 },
   },
   {
     id: 'ROUTE_STAGE_08_ABYSS_B',
     points: [
-      { x: -80, y: 180 },
-      { x: 190, y: 205 },
-      { x: 430, y: 300 },
-      { x: 665, y: 445 },
-      { x: 920, y: 525 },
-      { x: 1165, y: 485 },
-      { x: 1380, y: 555 },
-      { x: 1510, y: 690 },
-      { x: 1650, y: 805 },
-      { x: 1810, y: 890 },
-      { x: 1980, y: 980 },
+      { x: 330, y: -60 },
+      { x: 305, y: 30 },
+      { x: 250, y: 110 },
+      { x: 225, y: 205 },
+      { x: 240, y: 300 },
+      { x: 305, y: 390 },
+      { x: 420, y: 480 },
+      { x: 560, y: 555 },
+      { x: 720, y: 625 },
+      { x: 900, y: 700 },
+      { x: 1090, y: 760 },
+      { x: 1290, y: 815 },
+      { x: 1490, y: 865 },
+      { x: 1690, y: 930 },
+      { x: 1900, y: 1030 },
     ],
     towerAnchors: stage08TowerAnchors,
-    breachPoint: { x: 1980, y: 980 },
+    breachPoint: { x: 1900, y: 1030 },
   },
   {
     id: 'ROUTE_STAGE_08_ABYSS_C',
     points: [
-      { x: -80, y: 220 },
-      { x: 205, y: 250 },
-      { x: 450, y: 365 },
-      { x: 690, y: 510 },
-      { x: 930, y: 600 },
-      { x: 1170, y: 555 },
-      { x: 1390, y: 620 },
-      { x: 1540, y: 745 },
-      { x: 1710, y: 855 },
-      { x: 1980, y: 995 },
+      { x: 360, y: -50 },
+      { x: 330, y: 45 },
+      { x: 275, y: 120 },
+      { x: 255, y: 205 },
+      { x: 270, y: 290 },
+      { x: 325, y: 370 },
+      { x: 435, y: 455 },
+      { x: 575, y: 530 },
+      { x: 730, y: 595 },
+      { x: 910, y: 670 },
+      { x: 1100, y: 730 },
+      { x: 1300, y: 785 },
+      { x: 1500, y: 835 },
+      { x: 1700, y: 900 },
+      { x: 1915, y: 1005 },
     ],
     towerAnchors: stage08TowerAnchors,
-    breachPoint: { x: 1980, y: 995 },
+    breachPoint: { x: 1915, y: 1005 },
   },
 ];
 
@@ -1293,7 +1348,7 @@ const stage01SourceBundle: BattleBundleV1 = {
     breachPoint: stage01RoutePoints[stage01RoutePoints.length - 1] ?? { x: 680, y: 1140 },
   },
   tower: {
-    baseDamageMilli: 24_000,
+    baseDamageMilli: 32_000,
     attackIntervalTicks: 24,
     rangePx: 360,
     aimHalfAngleU16: 10_923,
@@ -1322,6 +1377,10 @@ const stage01SourceBundle: BattleBundleV1 = {
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
     maxRevives: 1,
+    initialActiveTowerIds: [0, 1],
+    towerBuildCost: 40,
+    towerUnlockCompletedWaves: 2,
+    shopPurchaseLimitPerWave: 2,
   },
 };
 
@@ -1341,7 +1400,7 @@ const stage02SourceBundle: BattleBundleV1 = {
     breachPoint: stage02RoutePoints[stage02RoutePoints.length - 1] ?? { x: 620, y: 1150 },
   },
   tower: {
-    baseDamageMilli: 24_000,
+    baseDamageMilli: 32_000,
     attackIntervalTicks: 24,
     rangePx: 600,
     aimHalfAngleU16: 10_923,
@@ -1370,6 +1429,10 @@ const stage02SourceBundle: BattleBundleV1 = {
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
     maxRevives: 1,
+    initialActiveTowerIds: [0, 1],
+    towerBuildCost: 65,
+    towerUnlockCompletedWaves: 2,
+    shopPurchaseLimitPerWave: 2,
   },
 };
 
@@ -1389,7 +1452,7 @@ const stage03SourceBundle: BattleBundleV1 = {
     breachPoint: stage03RoutePoints[stage03RoutePoints.length - 1] ?? { x: 1230, y: 930 },
   },
   tower: {
-    baseDamageMilli: 24_000,
+    baseDamageMilli: 32_000,
     attackIntervalTicks: 24,
     rangePx: 600,
     aimHalfAngleU16: 10_923,
@@ -1418,6 +1481,10 @@ const stage03SourceBundle: BattleBundleV1 = {
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
     maxRevives: 1,
+    initialActiveTowerIds: [0, 1],
+    towerBuildCost: 95,
+    towerUnlockCompletedWaves: 2,
+    shopPurchaseLimitPerWave: 2,
   },
 };
 
@@ -1437,7 +1504,7 @@ const stage04SourceBundle: BattleBundleV1 = {
     breachPoint: stage04RoutePoints[stage04RoutePoints.length - 1] ?? { x: 980, y: 1120 },
   },
   tower: {
-    baseDamageMilli: 24_000,
+    baseDamageMilli: 32_000,
     attackIntervalTicks: 24,
     rangePx: 750,
     aimHalfAngleU16: 10_923,
@@ -1466,6 +1533,10 @@ const stage04SourceBundle: BattleBundleV1 = {
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
     maxRevives: 1,
+    initialActiveTowerIds: [0, 1],
+    towerBuildCost: 110,
+    towerUnlockCompletedWaves: 2,
+    shopPurchaseLimitPerWave: 2,
   },
 };
 
@@ -1485,7 +1556,7 @@ const stage05SourceBundle: BattleBundleV1 = {
     breachPoint: stage05RoutePoints[stage05RoutePoints.length - 1] ?? { x: 930, y: 1120 },
   },
   tower: {
-    baseDamageMilli: 24_000,
+    baseDamageMilli: 32_000,
     attackIntervalTicks: 24,
     rangePx: 750,
     aimHalfAngleU16: 10_923,
@@ -1514,6 +1585,10 @@ const stage05SourceBundle: BattleBundleV1 = {
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
     maxRevives: 1,
+    initialActiveTowerIds: [0, 1],
+    towerBuildCost: 110,
+    towerUnlockCompletedWaves: 2,
+    shopPurchaseLimitPerWave: 2,
   },
 };
 
@@ -1533,7 +1608,7 @@ const stage06SourceBundle: BattleBundleV1 = {
     breachPoint: stage06RoutePoints[stage06RoutePoints.length - 1] ?? { x: 980, y: 1120 },
   },
   tower: {
-    baseDamageMilli: 24_000,
+    baseDamageMilli: 32_000,
     attackIntervalTicks: 24,
     rangePx: 750,
     aimHalfAngleU16: 10_923,
@@ -1562,6 +1637,10 @@ const stage06SourceBundle: BattleBundleV1 = {
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
     maxRevives: 1,
+    initialActiveTowerIds: [0, 1],
+    towerBuildCost: 125,
+    towerUnlockCompletedWaves: 2,
+    shopPurchaseLimitPerWave: 2,
   },
 };
 
@@ -1581,7 +1660,7 @@ const stage07SourceBundle: BattleBundleV1 = {
     breachPoint: stage07RoutePoints[stage07RoutePoints.length - 1] ?? { x: 1180, y: 1120 },
   },
   tower: {
-    baseDamageMilli: 31_000,
+    baseDamageMilli: 40_000,
     attackIntervalTicks: 24,
     rangePx: 750,
     aimHalfAngleU16: 10_923,
@@ -1610,6 +1689,10 @@ const stage07SourceBundle: BattleBundleV1 = {
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
     maxRevives: 1,
+    initialActiveTowerIds: [0, 1],
+    towerBuildCost: 130,
+    towerUnlockCompletedWaves: 2,
+    shopPurchaseLimitPerWave: 2,
   },
 };
 

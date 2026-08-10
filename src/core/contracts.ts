@@ -127,7 +127,9 @@ export type CardEffectId =
   | 'arrow-count'
   | 'penetration'
   | 'crit-rate'
-  | 'crit-damage';
+  | 'crit-damage'
+  | 'critical-mastery'
+  | 'tower-count';
 
 export interface CardDefinition {
   id: string;
@@ -135,7 +137,9 @@ export interface CardDefinition {
   quality: 'G' | 'B' | 'P';
   effectId: CardEffectId;
   valueBp?: number;
+  secondaryValueBp?: number;
   valueInt?: number;
+  warPointCost?: number;
   iconAssetId: string;
 }
 
@@ -205,12 +209,22 @@ export interface BattleBundleV1 {
     volleyDamageFalloffBp?: number;
     /** Duration of shared tower overdrive; fixed stages default to 5 seconds and zero disables it. */
     overdriveDurationTicks?: number;
+    /** Towers deployed when a fixed-stage run starts. Endless stages keep all towers active. */
+    initialActiveTowerIds?: TowerId[];
+    /** Run-local war-point price for deploying the remaining fixed-stage tower. */
+    towerBuildCost?: number;
+    /** Fully cleared waves required before the reinforcement tower can be purchased. */
+    towerUnlockCompletedWaves?: number;
+    /** Maximum fixed-stage shop purchases during one wave. */
+    shopPurchaseLimitPerWave?: number;
   };
 }
 
 export type BattleCommand =
   | { seq: number; type: 'SET_AIM'; towerId: TowerId; angleU16: number }
   | { seq: number; type: 'ACTIVATE_OVERDRIVE'; towerId: TowerId }
+  | { seq: number; type: 'OPEN_SHOP' }
+  | { seq: number; type: 'CLOSE_SHOP' }
   | { seq: number; type: 'SET_SPEED'; value: 1 | 2 }
   | { seq: number; type: 'PAUSE' }
   | { seq: number; type: 'RESUME' }
@@ -290,6 +304,30 @@ export type BattleEvent =
       deathX: number;
       deathY: number;
       movement: EnemyDefinition['movement'];
+    }
+  | {
+      eventId: string;
+      tick: number;
+      type: 'WAR_POINTS_GAINED';
+      amount: number;
+      balance: number;
+      source: 'kill' | 'focused-kills' | 'wave-clear';
+      entityId?: number;
+    }
+  | {
+      eventId: string;
+      tick: number;
+      type: 'CARD_PURCHASED';
+      cardId: string;
+      cost: number;
+      balance: number;
+    }
+  | {
+      eventId: string;
+      tick: number;
+      type: 'TOWER_UNLOCKED';
+      towerId: TowerId;
+      activeTowerCount: number;
     }
   | { eventId: string; tick: number; type: 'LEVEL_UP'; level: number }
   | {
@@ -405,10 +443,14 @@ export interface TowerCardPreviewV1 {
   before: EffectiveTowerStatsV1;
   after: EffectiveTowerStatsV1;
   capped: boolean;
+  warPointCost: number;
+  towerCountBefore?: number;
+  towerCountAfter?: number;
 }
 
 export interface TowerRuntimeProjectionV1 {
   towerId: TowerId;
+  active: boolean;
   currentTargetEntityId?: number;
   currentTargetName?: string;
   enemiesInRange: number;
@@ -449,10 +491,17 @@ export interface HudProjectionV1 {
   level: number;
   exp: number;
   expRequired: number;
+  warPointsBalance: number;
+  warPointsEarned: number;
   waveIndex: number;
   waveCount: number;
   progressBp: number;
   aimAnglesU16: TowerAimAnglesU16;
+  activeTowerIds: TowerId[];
+  shopAvailable: boolean;
+  shopPurchasesThisWave: number;
+  shopPurchaseLimitPerWave: number;
+  shopPurchasedThisWave: boolean;
   revivesUsed: number;
   gateIntegrity: number;
   gateIntegrityMax: number;

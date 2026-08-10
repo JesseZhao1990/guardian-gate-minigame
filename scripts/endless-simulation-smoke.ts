@@ -128,6 +128,7 @@ assert.equal(
   stage08ConfigHash,
   `sha256:${createHash('sha256').update(JSON.stringify(stage08HashInput)).digest('hex')}`,
 );
+assert.equal(baseBundle.releaseId, 'GG_S08_ENDLESS_V2');
 assert.equal(baseBundle.stage.name, '无尽潮渊');
 assert.equal(baseBundle.stage.backgroundAssetId, 'STAGE_08_BACKGROUND');
 assert.equal(baseBundle.mode, 'endless');
@@ -272,7 +273,7 @@ const capCheckpoint = JSON.parse(new TextDecoder().decode(capSimulation.createCh
     };
   };
 };
-assert.equal(capCheckpoint.schemaVersion, 5);
+assert.equal(capCheckpoint.schemaVersion, 6);
 assert.ok(capCheckpoint.state.endless.pendingPacks.every((pack) => pack.units.length <= 32));
 assert.equal(
   createBattleSimulation(
@@ -379,9 +380,14 @@ projectileProbeBundle.tower.rangePx = 5_000;
 projectileProbeBundle.tower.projectileSpeedPxPerSecond = 60;
 projectileProbeBundle.tower.baseDamageMilli = 1;
 projectileProbeBundle.tower.critChanceBp = 0;
-for (const enemy of Object.values(projectileProbeBundle.enemies)) enemy.speedPxPerSecond = 1;
+for (const enemy of Object.values(projectileProbeBundle.enemies)) enemy.speedPxPerSecond = 100;
 const projectileProbeSimulation = createBattleSimulation(projectileProbeBundle, seed + 4);
-projectileProbeSimulation.advanceTicks(2);
+for (let tick = 0; tick < 120; tick += 1) {
+  projectileProbeSimulation.advanceTicks(1);
+  if (projectileProbeSimulation.getRenderSnapshot().entities.some(
+    (entity) => entity.renderKind === 'projectile',
+  )) break;
+}
 const projectileCheckpoint = JSON.parse(
   new TextDecoder().decode(projectileProbeSimulation.createCheckpoint()),
 ) as {
@@ -408,6 +414,13 @@ const projectileCheckpoint = JSON.parse(
   };
 };
 assert.ok(projectileCheckpoint.state.projectiles.length > 0);
+const projectileFixture = projectileCheckpoint.state.projectiles[0];
+const projectileTargetFixture = projectileCheckpoint.state.enemies.find(
+  (enemy) => enemy.entityId === projectileFixture?.targetEntityId,
+);
+assert.ok(projectileFixture && projectileTargetFixture);
+projectileCheckpoint.state.projectiles = [projectileFixture];
+projectileCheckpoint.state.enemies = [projectileTargetFixture];
 createBattleSimulation(
   projectileProbeBundle,
   seed + 4,
@@ -690,6 +703,11 @@ expectThrow(
   'projectile sequence is not monotonic',
 );
 
+const sequenceBoundaryEntry = projectileProbeBundle.route.points[0];
+const sequenceBoundarySecondPoint = projectileProbeBundle.route.points[1];
+assert.ok(sequenceBoundaryEntry && sequenceBoundarySecondPoint);
+sequenceBoundaryEntry.y = 64;
+sequenceBoundarySecondPoint.y = 64;
 const sequenceBoundarySimulation = createBattleSimulation(projectileProbeBundle, seed + 4);
 const sequenceBoundaryCheckpoint = JSON.parse(
   new TextDecoder().decode(sequenceBoundarySimulation.createCheckpoint()),
@@ -717,7 +735,7 @@ const projectileBoundarySimulation = createBattleSimulation(
 );
 assert.ok(
   projectileBoundarySimulation
-    .advanceTicks(1)
+    .advanceTicks(2)
     .events.some((event) => event.type === 'ATTACK_RELEASE'),
   'The exact 27-projectile reserve boundary must execute one firing step.',
 );
@@ -1389,7 +1407,7 @@ const finiteV5 = JSON.parse(new TextDecoder().decode(finiteSimulation.createChec
     };
   };
 };
-assert.equal(finiteV5.schemaVersion, 5);
+assert.equal(finiteV5.schemaVersion, 6);
 const exhaustedFixedTickCheckpoint = JSON.parse(JSON.stringify(finiteV5)) as typeof finiteV5;
 exhaustedFixedTickCheckpoint.state.tick = Number.MAX_SAFE_INTEGER;
 exhaustedFixedTickCheckpoint.state.scheduler.nextSpawnTick = Number.MAX_SAFE_INTEGER;
@@ -1566,5 +1584,5 @@ for (let index = 0; index < 30; index += 1) {
 console.log('✓ Stage 08 三路线与 1201 项威胁 LUT 固化通过');
 console.log('✓ 450/24 tick 威胁包、三次小首领、120 active 上限与排队通过');
 console.log('✓ 36000 Boss 切换、450 tick 飞行召唤、分层与实际伤害计分通过');
-console.log('✓ 45000/manual 结算、无 VICTORY、checkpoint V5 与 finite V2/V3/V4 兼容通过');
+console.log('✓ 45000/manual 结算、无 VICTORY、checkpoint V6 与 finite V2/V3/V4/V5 兼容通过');
 console.log(`✓ 30 seeds 满清怪 20 分钟等级区间 ${Math.min(...levelMatrix)}–${Math.max(...levelMatrix)} 通过`);

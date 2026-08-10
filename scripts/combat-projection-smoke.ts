@@ -24,8 +24,8 @@ const assert = {
 };
 
 const expectedBaseStats: EffectiveTowerStatsV1 = {
-  damagePerArrowMilli: 24_000,
-  criticalDamagePerArrowMilli: 36_000,
+  damagePerArrowMilli: 32_000,
+  criticalDamagePerArrowMilli: 48_000,
   attackIntervalTicks: 24,
   attackRateMilliPerSecond: 1_250,
   rangePx: 360,
@@ -46,13 +46,14 @@ assert.deepEqual(initialHud.towerStats, {
 assert.deepEqual(
   initialHud.towerRuntime.map((tower) => ({
     towerId: tower.towerId,
+    active: tower.active,
     enemiesInRange: tower.enemiesInRange,
     preferredEnemiesInRange: tower.preferredEnemiesInRange,
   })),
   [
-    { towerId: 0, enemiesInRange: 0, preferredEnemiesInRange: 0 },
-    { towerId: 1, enemiesInRange: 0, preferredEnemiesInRange: 0 },
-    { towerId: 2, enemiesInRange: 0, preferredEnemiesInRange: 0 },
+    { towerId: 0, active: true, enemiesInRange: 0, preferredEnemiesInRange: 0 },
+    { towerId: 1, active: true, enemiesInRange: 0, preferredEnemiesInRange: 0 },
+    { towerId: 2, active: false, enemiesInRange: 0, preferredEnemiesInRange: 0 },
   ],
 );
 assert.equal(initialHud.offerPreviews, undefined);
@@ -94,9 +95,19 @@ assert.equal(
 );
 const runtimeWithTargets = hitSimulation.getHudProjection().towerRuntime;
 assert.equal(runtimeWithTargets.length, 3);
-assert.ok(runtimeWithTargets.every((tower) => tower.enemiesInRange > 0));
-assert.ok(runtimeWithTargets.every((tower) => tower.currentTargetEntityId !== undefined));
-assert.ok(runtimeWithTargets.every((tower) => tower.currentTargetName === hitEnemy.name));
+assert.ok(runtimeWithTargets.filter((tower) => tower.active).every((tower) => tower.enemiesInRange > 0));
+assert.ok(runtimeWithTargets.filter((tower) => tower.active).every(
+  (tower) => tower.currentTargetEntityId !== undefined,
+));
+assert.ok(runtimeWithTargets.filter((tower) => tower.active).every(
+  (tower) => tower.currentTargetName === hitEnemy.name,
+));
+assert.deepEqual(runtimeWithTargets.find((tower) => !tower.active), {
+  towerId: 2,
+  active: false,
+  enemiesInRange: 0,
+  preferredEnemiesInRange: 0,
+});
 
 const previewBundle = createStage01Bundle();
 previewBundle.tower.rangePx = 5_000;
@@ -108,21 +119,27 @@ if (!previewWave || !previewEnemy) throw new Error('Offer preview probe requires
 previewWave.groups = [{ enemyId: previewEnemy.id, count: 1, intervalTicks: 1 }];
 previewEnemy.maxHpMilli = 1;
 previewEnemy.armorBp = 0;
-previewEnemy.exp = 100;
+previewEnemy.exp = 4;
 
-const previewSimulation = createBattleSimulation(previewBundle, 0xc4ad5);
-let offerOrdinal: number | undefined;
-for (let tick = 0; tick < 180 && offerOrdinal === undefined; tick += 1) {
-  const output = previewSimulation.advanceTicks(1);
-  const request = output.flowRequests.find((candidate) => candidate.type === 'OFFER');
-  if (request?.type === 'OFFER') offerOrdinal = request.ordinal;
-}
-assert.ok(offerOrdinal !== undefined);
 const previewCards = [
   'CARD_BASIC_DAMAGE_P',
   'CARD_BASIC_FREQUENCY_P',
   'CARD_BASIC_ARROW_COUNT_P',
 ] as const;
+for (const cardId of previewCards) {
+  const card = previewBundle.cards.find((candidate) => candidate.id === cardId);
+  if (!card) throw new Error(`Offer preview card ${cardId} is missing.`);
+  card.warPointCost = 1;
+}
+
+const previewSimulation = createBattleSimulation(previewBundle, 0xc4ad5);
+for (let tick = 0; tick < 180 && previewSimulation.getHudProjection().warPointsBalance < 2; tick += 1) {
+  previewSimulation.advanceTicks(1);
+}
+const shopOutput = previewSimulation.applyCommand({ seq: 1, type: 'OPEN_SHOP' });
+const offerRequest = shopOutput.flowRequests.find((candidate) => candidate.type === 'OFFER');
+const offerOrdinal = offerRequest?.type === 'OFFER' ? offerRequest.ordinal : undefined;
+assert.ok(offerOrdinal !== undefined);
 applyAuthority(previewSimulation, {
   type: 'OFFER_GRANTED',
   authoritySeq: 1,
@@ -140,15 +157,15 @@ if (!damagePreview || !frequencyPreview || !arrowPreview) {
   throw new Error('All three projection previews must be present.');
 }
 assert.deepEqual(damagePreview.before, pendingHud.towerStats.current);
-assert.equal(damagePreview.after.damagePerArrowMilli, 28_800);
-assert.equal(damagePreview.after.criticalDamagePerArrowMilli, 43_200);
+assert.equal(damagePreview.after.damagePerArrowMilli, 38_400);
+assert.equal(damagePreview.after.criticalDamagePerArrowMilli, 57_600);
 assert.equal(damagePreview.capped, false);
 assert.equal(frequencyPreview.after.attackIntervalTicks, 21);
 assert.equal(frequencyPreview.after.attackRateMilliPerSecond, 1_429);
 assert.equal(frequencyPreview.capped, false);
 assert.equal(arrowPreview.after.arrowCount, 3);
-assert.equal(arrowPreview.after.damagePerArrowMilli, 19_200);
-assert.equal(arrowPreview.after.criticalDamagePerArrowMilli, 28_800);
+assert.equal(arrowPreview.after.damagePerArrowMilli, 25_600);
+assert.equal(arrowPreview.after.criticalDamagePerArrowMilli, 38_400);
 assert.equal(arrowPreview.capped, false);
 
 applyAuthority(previewSimulation, {

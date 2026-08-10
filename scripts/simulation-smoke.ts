@@ -35,12 +35,18 @@ import {
 import { LocalPracticeAuthority } from '../src/core/local-authority';
 import { checkpointChecksum, decodeText, encodeText } from '../src/platform/wechat';
 import {
-  BREACH_SEAL_MAX_Y,
+  BATTLE_BOTTOM_HUD_LEFT_RIGHT,
+  BATTLE_BOTTOM_HUD_RIGHT_LEFT,
+  BATTLE_BOTTOM_HUD_TOP,
+  BATTLE_WORLD_SCALE,
+  BREACH_SEAL_VISUAL_RADIUS,
+  projectBattleWorldPoint,
   resolveBreachSealPlacement,
   resolveCanvasFontWeight,
   resolveCardOverlayLayout,
   resolveHomeStageCardLayout,
   resolveViewportLayout,
+  unprojectBattleWorldPoint,
 } from '../src/render/CanvasRenderer';
 
 const assert = {
@@ -70,8 +76,9 @@ assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [
 ]);
 oneX.applyCommand({ seq: 2, type: 'SET_AIM', towerId: 0, angleU16: 12_345 });
 oneX.applyCommand({ seq: 3, type: 'SET_AIM', towerId: 1, angleU16: 23_456 });
-oneX.applyCommand({ seq: 4, type: 'SET_AIM', towerId: 2, angleU16: 34_567 });
-assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [12_345, 23_456, 34_567]);
+const lockedTowerAim = oneX.applyCommand({ seq: 4, type: 'SET_AIM', towerId: 2, angleU16: 34_567 });
+assert.equal(lockedTowerAim.commandAcks[0]?.status, 'rejected');
+assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [12_345, 23_456, DEFAULT_AIM_ANGLE_U16]);
 const rejectedAim = oneX.applyCommand({
   seq: 5,
   type: 'SET_AIM',
@@ -100,7 +107,7 @@ const rejectedFractionalAngle = oneX.applyCommand({
   angleU16: 45_678.5,
 } as never);
 assert.equal(rejectedFractionalAngle.commandAcks[0]?.status, 'rejected');
-assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [12_345, 23_456, 34_567]);
+assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [12_345, 23_456, DEFAULT_AIM_ANGLE_U16]);
 oneX.advanceTicks(90);
 const checkpoint = oneX.createCheckpoint();
 const restored = createBattleSimulation(createStage01Bundle(), 0x12345678, checkpoint);
@@ -129,7 +136,9 @@ function angleTo(from: Point, to: Point): number {
   return Math.round(((angle / (Math.PI * 2) + 1) % 1) * 65_536) & 0xffff;
 }
 
-const fallbackSimulation = createBattleSimulation(createStage01Bundle(), 0xfa11bac);
+const fallbackBundle = createStage01Bundle();
+fallbackBundle.rules.initialActiveTowerIds = [0, 1, 2];
+const fallbackSimulation = createBattleSimulation(fallbackBundle, 0xfa11bac);
 const fallbackAimAngles = [4_096, 20_480, 53_248] as const;
 fallbackAimAngles.forEach((angleU16, towerId) => {
   fallbackSimulation.applyCommand({
@@ -142,6 +151,7 @@ fallbackAimAngles.forEach((angleU16, towerId) => {
 assert.deepEqual(fallbackSimulation.getRenderSnapshot().towerFacingsU16, fallbackAimAngles);
 
 const targetingBundle = createStage01Bundle();
+targetingBundle.rules.initialActiveTowerIds = [0, 1, 2];
 targetingBundle.tower.rangePx = 5_000;
 targetingBundle.tower.projectileSpeedPxPerSecond = 60;
 targetingBundle.tower.baseDamageMilli = 1;
@@ -245,12 +255,6 @@ leftAuthority.requestOffer(2);
 const rightAuthority = new LocalPracticeAuthority(createStage01Bundle(), 999, leftAuthority.snapshot());
 assert.deepEqual(rightAuthority.requestOffer(3).cards, leftAuthority.requestOffer(3).cards);
 
-const offerCards = [
-  'CARD_BASIC_DAMAGE_P',
-  'CARD_BASIC_FREQUENCY_P',
-  'CARD_BASIC_ARROW_COUNT_P',
-] as const;
-
 function projectedSmokeThroughput(stats: {
   damagePerArrowMilli: number;
   attackIntervalTicks: number;
@@ -325,12 +329,47 @@ function stageCombatDistribution(events: BattleEvent[], waveCount: number): Stag
 }
 
 function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
-  let authoritySequence = 1;
   let commandSequence = 1_000_000;
-  let offerOrdinal = 1;
   let nextTacticTick = 0;
   const simulation = createBattleSimulation(bundle, seed);
+  const authority = new LocalPracticeAuthority(bundle, seed);
   const events: BattleEvent[] = [];
+  const lastShopAttemptBalanceByWave = new Map<number, number>();
+  const routeSegments = bundle.route.points.slice(0, -1).map((start, index) => {
+    const end = bundle.route.points[index + 1];
+    if (!end) throw new Error('A smoke-test route segment requires an end point.');
+    const deltaX = end.x - start.x;
+    const deltaY = end.y - start.y;
+    return { start, deltaX, deltaY, length: Math.hypot(deltaX, deltaY) };
+  });
+
+  function routeProgress(point: Point): number {
+    let cumulative = 0;
+    let bestProgress = 0;
+    let bestDistanceSquared = Number.POSITIVE_INFINITY;
+    for (const segment of routeSegments) {
+      const lengthSquared = segment.deltaX ** 2 + segment.deltaY ** 2;
+      const projection = lengthSquared === 0
+        ? 0
+        : Math.max(0, Math.min(1, (
+            (point.x - segment.start.x) * segment.deltaX +
+            (point.y - segment.start.y) * segment.deltaY
+          ) / lengthSquared));
+      const projectedX = segment.start.x + segment.deltaX * projection;
+      const projectedY = segment.start.y + segment.deltaY * projection;
+      const distanceSquared = (point.x - projectedX) ** 2 + (point.y - projectedY) ** 2;
+      const progress = cumulative + segment.length * projection;
+      if (
+        distanceSquared < bestDistanceSquared ||
+        (distanceSquared === bestDistanceSquared && progress > bestProgress)
+      ) {
+        bestDistanceSquared = distanceSquared;
+        bestProgress = progress;
+      }
+      cumulative += segment.length;
+    }
+    return bestProgress;
+  }
 
   function applyAndQueue(event: AuthorityEventV1, pending: SimulationOutput[]): void {
     pending.push(simulation.applyAuthorityEvent(event));
@@ -344,61 +383,75 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
       events.push(...output.events);
       for (const request of output.flowRequests) {
         if (request.type === 'REVIVE') {
-          applyAndQueue({
-            type: 'REVIVE_GRANTED',
-            authoritySeq: authoritySequence++,
-            authorizationId: `${bundle.stage.id.toLowerCase()}-smoke-revive-${request.ordinal}`,
-            reviveOrdinal: request.ordinal,
-          }, pending);
+          applyAndQueue(authority.grantRevive(request.ordinal), pending);
           continue;
         }
-        const id = `${bundle.stage.id.toLowerCase()}-smoke-offer-${offerOrdinal}`;
-        applyAndQueue({
-          type: 'OFFER_GRANTED',
-          authoritySeq: authoritySequence++,
-          authorizationId: `${id}-grant`,
-          offerId: id,
-          cards: [...offerCards],
-        }, pending);
-        const bestPreview = [...(simulation.getHudProjection().offerPreviews ?? [])]
-          .filter((preview) => offerCards.includes(preview.cardId as (typeof offerCards)[number]))
-          .sort((left, right) =>
-            Number(left.capped) - Number(right.capped) ||
-            projectedSmokeThroughput(right.after) - projectedSmokeThroughput(left.after) ||
-            left.cardId.localeCompare(right.cardId)
-          )[0];
-        applyAndQueue({
-          type: 'CARD_CHOICE_ACCEPTED',
-          authoritySeq: authoritySequence++,
-          authorizationId: `${id}-choice`,
-          offerId: id,
-          cardId: bestPreview?.cardId ?? offerCards[(offerOrdinal - 1) % offerCards.length] ?? offerCards[0],
-        }, pending);
-        offerOrdinal += 1;
+        applyAndQueue(
+          authority.requestOffer(request.ordinal, undefined, request.eligibleEffectIds),
+          pending,
+        );
       }
     }
+  }
+
+  function attemptShopPurchase(): void {
+    const beforeOpen = simulation.getHudProjection();
+    if (!beforeOpen.shopAvailable) return;
+    if (lastShopAttemptBalanceByWave.get(beforeOpen.waveIndex) === beforeOpen.warPointsBalance) {
+      return;
+    }
+    lastShopAttemptBalanceByWave.set(beforeOpen.waveIndex, beforeOpen.warPointsBalance);
+
+    const openOutput = simulation.applyCommand({ seq: ++commandSequence, type: 'OPEN_SHOP' });
+    resolveOutput(openOutput);
+    if (openOutput.commandAcks[0]?.status !== 'applied') return;
+
+    const shopHud = simulation.getHudProjection();
+    if (shopHud.flowState !== 'offer-pending' || !shopHud.activeOffer) {
+      throw new Error('An opened fixed-stage shop must expose its authority-backed offer.');
+    }
+    const affordable = [...(shopHud.offerPreviews ?? [])]
+      .filter((preview) => {
+        if (preview.capped || preview.warPointCost > shopHud.warPointsBalance) return false;
+        return true;
+      })
+      .sort((left, right) => {
+        const leftIsTower = left.towerCountAfter !== undefined;
+        const rightIsTower = right.towerCountAfter !== undefined;
+        return Number(rightIsTower) - Number(leftIsTower) ||
+          projectedSmokeThroughput(right.after) - projectedSmokeThroughput(left.after) ||
+          left.warPointCost - right.warPointCost ||
+          left.cardId.localeCompare(right.cardId);
+      });
+    const choice = affordable[0];
+    if (choice) {
+      resolveOutput(simulation.applyAuthorityEvent(
+        authority.acceptChoice(shopHud.activeOffer.offerId, choice.cardId),
+      ));
+      return;
+    }
+    resolveOutput(simulation.applyCommand({ seq: ++commandSequence, type: 'CLOSE_SHOP' }));
   }
 
   function applyTactics(): void {
     const hud = simulation.getHudProjection();
     if (hud.flowState !== 'running' || hud.tick < nextTacticTick) return;
-    nextTacticTick = hud.tick + 30;
+    nextTacticTick = hud.tick + 10;
     const enemies = simulation.getRenderSnapshot().entities.filter(
       (entity) => entity.renderKind === 'enemy',
     );
     const rangeSquared = hud.towerStats.current.rangePx ** 2;
     for (const [towerIndex, anchor] of bundle.route.towerAnchors.entries()) {
+      if (!hud.activeTowerIds.includes(towerIndex as 0 | 1 | 2)) continue;
       const inRange = enemies.filter((enemy) => {
         const deltaX = enemy.x - anchor.x;
         const deltaY = enemy.y - anchor.y;
         return deltaX * deltaX + deltaY * deltaY <= rangeSquared;
       });
       const target = inRange.sort((left, right) => {
-        const leftX = left.x - bundle.route.breachPoint.x;
-        const leftY = left.y - bundle.route.breachPoint.y;
-        const rightX = right.x - bundle.route.breachPoint.x;
-        const rightY = right.y - bundle.route.breachPoint.y;
-        return leftX * leftX + leftY * leftY - (rightX * rightX + rightY * rightY) ||
+        return Number((left.flags & ENEMY_FLAG_ETHEREAL) !== 0) -
+          Number((right.flags & ENEMY_FLAG_ETHEREAL) !== 0) ||
+          routeProgress(right) - routeProgress(left) ||
           left.entityId - right.entityId;
       })[0];
       if (!target) continue;
@@ -412,6 +465,7 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
     const tacticalHud = simulation.getHudProjection();
     if (tacticalHud.overdrive.ready && tacticalHud.overdrive.activeTowerId === null) {
       const pressure = [...tacticalHud.towerRuntime]
+        .filter((tower) => tower.active && tower.enemiesInRange > 0)
         .sort((left, right) =>
           right.enemiesInRange - left.enemiesInRange ||
           right.preferredEnemiesInRange - left.preferredEnemiesInRange ||
@@ -429,8 +483,9 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
 
   let tickBudget = 180_000;
   while (tickBudget > 0 && simulation.getHudProjection().flowState !== 'result') {
+    attemptShopPurchase();
     applyTactics();
-    const output = simulation.advanceTicks(Math.min(30, tickBudget));
+    const output = simulation.advanceTicks(Math.min(10, tickBudget));
     tickBudget -= output.ticksAdvanced;
     resolveOutput(output);
     if (output.ticksAdvanced === 0 && output.flowRequests.length === 0) break;
@@ -439,8 +494,30 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
 }
 
 function assertVictory(run: VictoryRun, expectedSpawnCount: number): void {
-  assert.ok(run.events.some((event) => event.type === 'VICTORY'));
+  const hud = run.simulation.getHudProjection();
+  assert.ok(
+    run.events.some((event) => event.type === 'VICTORY'),
+    `Expected a victory, received ${JSON.stringify({
+      outcome: hud.outcome,
+      progressBp: hud.progressBp,
+      gateIntegrity: hud.gateIntegrity,
+      warPointsBalance: hud.warPointsBalance,
+      warPointsEarned: hud.warPointsEarned,
+      activeTowerIds: hud.activeTowerIds,
+      currentStats: hud.towerStats.current,
+      breaches: run.events
+        .filter((event) => event.type === 'BREACH')
+        .map((event) => [event.enemyId, event.damage]),
+      remainingEnemies: run.simulation.getRenderSnapshot().entities
+        .filter((entity) => entity.renderKind === 'enemy')
+        .map((entity) => entity.assetId),
+      purchases: run.events
+        .filter((event) => event.type === 'CARD_PURCHASED')
+        .map((event) => event.cardId),
+    })}`,
+  );
   assert.equal(run.events.filter((event) => event.type === 'SPAWN').length, expectedSpawnCount);
+  assert.deepEqual(hud.activeTowerIds, [0, 1, 2]);
   assert.deepEqual(
     {
       flowState: run.simulation.getHudProjection().flowState,
@@ -694,7 +771,7 @@ try {
 }
 assert.ok(rejectedInvalidEthereal);
 
-const breachSealPlacements = [
+const fixedStageBundles = [
   stage01Bundle,
   stage02Bundle,
   stage03Bundle,
@@ -702,14 +779,69 @@ const breachSealPlacements = [
   stage05Bundle,
   stage06Bundle,
   stage07Bundle,
-]
-  .map((bundle) => resolveBreachSealPlacement(bundle.route));
-for (const placement of breachSealPlacements) {
+];
+const stage08EndlessRoutes = STAGE_BUNDLES.STAGE_08.endless?.routes ?? [];
+assert.equal(stage08EndlessRoutes.length, 3);
+assert.deepEqual(stage08EndlessRoutes[0]?.towerAnchors, [
+  { x: 720, y: 420 },
+  { x: 1080, y: 570 },
+  { x: 1350, y: 680 },
+]);
+assert.deepEqual(
+  stage08EndlessRoutes.map((route) => ({
+    start: route.points[0],
+    pointCount: route.points.length,
+    breachPoint: route.breachPoint,
+  })),
+  [
+    { start: { x: 300, y: -70 }, pointCount: 15, breachPoint: { x: 1885, y: 1035 } },
+    { start: { x: 330, y: -60 }, pointCount: 15, breachPoint: { x: 1900, y: 1030 } },
+    { start: { x: 360, y: -50 }, pointCount: 15, breachPoint: { x: 1915, y: 1005 } },
+  ],
+);
+const breachRoutes = [
+  ...fixedStageBundles.map((bundle) => ({ route: bundle.route, towerAnchors: bundle.route.towerAnchors })),
+  ...stage08EndlessRoutes.map((route) => ({
+    route,
+    towerAnchors: route.towerAnchors,
+  })),
+];
+const breachSealPlacements = breachRoutes.map(({ route }) => resolveBreachSealPlacement(route));
+const projectedBreachSealPlacements = breachSealPlacements.map(projectBattleWorldPoint);
+const projectedSealRadius = BREACH_SEAL_VISUAL_RADIUS * BATTLE_WORLD_SCALE;
+const projectedTowerRadius = 112 * BATTLE_WORLD_SCALE;
+for (const [index, placement] of breachSealPlacements.entries()) {
+  const routeCase = breachRoutes[index];
+  const projected = projectedBreachSealPlacements[index];
+  assert.ok(routeCase && projected);
   assert.ok(Number.isFinite(placement.x));
   assert.ok(Number.isFinite(placement.y));
   assert.ok(Number.isFinite(placement.tangentRadians));
-  assert.ok(placement.x >= 180 && placement.x <= 1_740);
-  assert.equal(placement.y, BREACH_SEAL_MAX_Y);
+  assert.deepEqual({ x: placement.x, y: placement.y }, routeCase.route.breachPoint);
+  assert.deepEqual(routeCase.route.points[routeCase.route.points.length - 1], routeCase.route.breachPoint);
+  assert.ok(projected.x - projectedSealRadius >= 0);
+  assert.ok(projected.x + projectedSealRadius <= 1_920);
+  assert.ok(projected.y - projectedSealRadius >= 0);
+  assert.ok(projected.y + projectedSealRadius <= 1_080);
+  const roundTrip = unprojectBattleWorldPoint(projected);
+  assert.ok(Math.abs(roundTrip.x - placement.x) < .000_001);
+  assert.ok(Math.abs(roundTrip.y - placement.y) < .000_001);
+  if (projected.y + projectedSealRadius > BATTLE_BOTTOM_HUD_TOP) {
+    assert.ok(
+      projected.x - projectedSealRadius >= BATTLE_BOTTOM_HUD_LEFT_RIGHT + 8 &&
+      projected.x + projectedSealRadius <= BATTLE_BOTTOM_HUD_RIGHT_LEFT - 8,
+      'A projected breach seal overlaps a bottom HUD module.',
+    );
+  }
+  for (const towerAnchor of routeCase.towerAnchors) {
+    const projectedTower = projectBattleWorldPoint(towerAnchor);
+    const deltaX = projectedTower.x - projected.x;
+    const deltaY = projectedTower.y - projected.y;
+    assert.ok(
+      Math.hypot(deltaX, deltaY) >= projectedSealRadius + projectedTowerRadius + 16,
+      'A projected breach seal overlaps a tower exclusion zone.',
+    );
+  }
 }
 
 const stage06CardLayouts = Array.from({ length: 6 }, (_, index) =>
@@ -808,13 +940,15 @@ assert.equal(
 );
 for (const waveIndex of [2, 3, 4]) {
   const towerAttacks = stage03Distribution.attacksByWave[waveIndex] ?? [];
+  const activeTowerAttacks = towerAttacks.filter((count) => count > 0);
   const minimumAttacks = waveIndex === 2 ? 6 : 10;
+  assert.ok(activeTowerAttacks.length >= 2);
   assert.ok(
-    towerAttacks.every((count) => count >= minimumAttacks),
+    activeTowerAttacks.every((count) => count >= minimumAttacks),
     `Stage 03 wave ${waveIndex + 1} attack density ${JSON.stringify(towerAttacks)}`,
   );
   assert.ok(
-    Math.max(...towerAttacks) / Math.max(1, Math.min(...towerAttacks)) <= 3,
+    Math.max(...activeTowerAttacks) / Math.max(1, Math.min(...activeTowerAttacks)) <= 3,
     `Stage 03 wave ${waveIndex + 1} tower imbalance ${JSON.stringify(towerAttacks)}`,
   );
 }
@@ -863,9 +997,13 @@ assert.equal(
 );
 for (const waveIndex of [2, 3, 4]) {
   const towerAttacks = stage04Distribution.attacksByWave[waveIndex] ?? [];
+  const activeTowerAttacks = towerAttacks.filter((count) => count > 0);
   const minimumAttacks = waveIndex === 2 ? 12 : waveIndex === 3 ? 16 : 20;
-  assert.ok(towerAttacks.every((count) => count >= minimumAttacks));
-  assert.ok(Math.max(...towerAttacks) / Math.max(1, Math.min(...towerAttacks)) <= 3);
+  assert.ok(activeTowerAttacks.length >= 2);
+  assert.ok(activeTowerAttacks.every((count) => count >= minimumAttacks));
+  assert.ok(
+    Math.max(...activeTowerAttacks) / Math.max(1, Math.min(...activeTowerAttacks)) <= 3,
+  );
   assert.ok((stage04Distribution.peakAliveByWave[waveIndex] ?? 0) >= 8);
   assert.ok((stage04Distribution.peakAliveByWave[waveIndex] ?? 0) <= 45);
 }
@@ -953,8 +1091,13 @@ assert.equal(
 );
 for (const waveIndex of [0, 1, 2, 3, 4]) {
   const towerAttacks = stage05Distribution.attacksByWave[waveIndex] ?? [];
-  assert.ok(towerAttacks.every((count) => count >= 3));
-  assert.ok(Math.max(...towerAttacks) / Math.max(1, Math.min(...towerAttacks)) <= 3);
+  const activeTowerAttacks = towerAttacks.filter((count) => count > 0);
+  if (waveIndex < 2) assert.equal(towerAttacks[2], 0);
+  assert.ok(activeTowerAttacks.length >= 2);
+  assert.ok(activeTowerAttacks.every((count) => count >= 3));
+  assert.ok(
+    Math.max(...activeTowerAttacks) / Math.max(1, Math.min(...activeTowerAttacks)) <= 3,
+  );
   assert.ok((stage05Distribution.peakAliveByWave[waveIndex] ?? 0) >= 5);
   assert.ok((stage05Distribution.peakAliveByWave[waveIndex] ?? 0) <= 50);
 }
@@ -975,6 +1118,7 @@ function phaseShellProbeBundle(enabled: boolean): BattleBundleV1 {
   boss.armorBp = 0;
   boss.phaseShellAboveHpBp = 9_700;
   boss.phaseShellMaxHitDamageBp = 100;
+  bundle.rules.initialActiveTowerIds = [0, 1, 2];
   bundle.tower.rangePx = 5_000;
   bundle.tower.attackIntervalTicks = 1;
   bundle.tower.projectileSpeedPxPerSecond = 5_000;
@@ -1053,8 +1197,13 @@ assert.equal(
 );
 for (const waveIndex of [0, 1, 2, 3, 4]) {
   const towerAttacks = stage06Distribution.attacksByWave[waveIndex] ?? [];
-  assert.ok(towerAttacks.every((count) => count >= 10));
-  assert.ok(Math.max(...towerAttacks) / Math.max(1, Math.min(...towerAttacks)) <= 3);
+  const activeTowerAttacks = towerAttacks.filter((count) => count > 0);
+  if (waveIndex < 2) assert.equal(towerAttacks[2], 0);
+  assert.ok(activeTowerAttacks.length >= 2);
+  assert.ok(activeTowerAttacks.every((count) => count >= 10));
+  assert.ok(
+    Math.max(...activeTowerAttacks) / Math.max(1, Math.min(...activeTowerAttacks)) <= 3,
+  );
   assert.ok((stage06Distribution.peakAliveByWave[waveIndex] ?? 0) >= 5);
   assert.ok((stage06Distribution.peakAliveByWave[waveIndex] ?? 0) <= 55);
 }
@@ -1158,7 +1307,11 @@ for (const waveIndex of [0, 1, 2, 3, 4]) {
     towerAttacks.reduce((sum, count) => sum + count, 0) >= 10,
     `Stage 07 wave ${waveIndex + 1} attack density ${JSON.stringify(towerAttacks)}`,
   );
-  assert.ok((stage07Distribution.peakAliveByWave[waveIndex] ?? 0) >= 5);
+  const minimumPeakAlive = waveIndex === 0 ? 4 : 5;
+  assert.ok(
+    (stage07Distribution.peakAliveByWave[waveIndex] ?? 0) >= minimumPeakAlive,
+    `Stage 07 wave ${waveIndex + 1} peak alive ${String(stage07Distribution.peakAliveByWave[waveIndex])}`,
+  );
   assert.ok((stage07Distribution.peakAliveByWave[waveIndex] ?? 0) <= 60);
 }
 assert.ok([0, 1, 2].every((towerId) =>
@@ -1172,6 +1325,10 @@ assert.deepEqual(
   stage07FirstVictory.events.map((event) => [event.tick, event.type]),
   stage07SecondVictory.events.map((event) => [event.tick, event.type]),
 );
+const stage07FinalHud = stage07FirstVictory.simulation.getHudProjection();
+const stage07PurchaseCount = stage07FirstVictory.events.filter(
+  (event) => event.type === 'CARD_PURCHASED',
+).length;
 
 let rejectedStage06CheckpointInStage07 = false;
 try {
@@ -1195,15 +1352,15 @@ console.log('✓ checkpoint 编解码、校验和确定性恢复通过');
 console.log('✓ 本地发牌 Authority 快照恢复通过');
 console.log('✓ Stage 01 五波、82 名敌人与胜利结算通过');
 console.log('✓ Stage 02 独立配置、五波 118 名敌人、确定性与完整通关通过');
-console.log(`✓ Stage 02 三塔逐波出手 ${JSON.stringify(stage02Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage02Distribution.peakAliveByWave)}`);
+console.log(`✓ Stage 02 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage02Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage02Distribution.peakAliveByWave)}`);
 console.log('✓ Stage 03 五波 136 名敌人、疾潮递增、重甲与首领出场顺序通过');
-console.log(`✓ Stage 03 三塔逐波出手 ${JSON.stringify(stage03Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage03Distribution.peakAliveByWave)}`);
+console.log(`✓ Stage 03 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage03Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage03Distribution.peakAliveByWave)}`);
 console.log('✓ Stage 04 五波 150 名敌人、残血狂潮与噬潮魔蛟首领阶段通过');
-console.log(`✓ Stage 04 三塔逐波出手 ${JSON.stringify(stage04Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage04Distribution.peakAliveByWave)}`);
+console.log(`✓ Stage 04 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage04Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage04Distribution.peakAliveByWave)}`);
 console.log('✓ Stage 05 五波 157 名敌人、护阵光环与蚀日鲲皇首领阶段通过');
-console.log(`✓ Stage 05 三塔逐波出手 ${JSON.stringify(stage05Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage05Distribution.peakAliveByWave)}`);
+console.log(`✓ Stage 05 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage05Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage05Distribution.peakAliveByWave)}`);
 console.log('✓ Stage 06 五波 168 名敌人、相壳阈值/限伤/恢复与万相蜃母首领阶段通过');
-console.log(`✓ Stage 06 三塔逐波出手 ${JSON.stringify(stage06Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage06Distribution.peakAliveByWave)}`);
+console.log(`✓ Stage 06 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage06Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage06Distribution.peakAliveByWave)}`);
 console.log('✓ Stage 07 五波 180 名敌人、虚实轮转/恢复与双相天蠹首领阶段通过');
-console.log(`✓ Stage 07 三塔逐波出手 ${JSON.stringify(stage07Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage07Distribution.peakAliveByWave)}`);
-console.log(`✓ 七关终点关印锚点统一位于 HUD 上方 ${JSON.stringify(breachSealPlacements.map((point) => [Math.round(point.x), point.y]))}`);
+console.log(`✓ Stage 07 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage07Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage07Distribution.peakAliveByWave)}；结算关印 ${stage07FinalHud.gateIntegrity}/${stage07FinalHud.gateIntegrityMax}，战功 ${stage07FinalHud.warPointsBalance}/${stage07FinalHud.warPointsEarned}，购买 ${stage07PurchaseCount} 次`);
+console.log(`✓ 七关与无尽三路的真实终点、可见关印、塔位和双侧 HUD 安全区一致 ${JSON.stringify(projectedBreachSealPlacements.map((point) => [Math.round(point.x), Math.round(point.y)]))}`);

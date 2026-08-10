@@ -2,7 +2,7 @@ import { createBattleSimulation, type SimulationOutput } from '../src/core/battl
 import { createStage01Bundle } from '../src/core/content';
 import type { BattleEvent } from '../src/core/contracts';
 import { MiniGameAudio, type MiniGameRuntime } from '../src/platform/wechat';
-import { CanvasRenderer } from '../src/render/CanvasRenderer';
+import { CanvasRenderer, projectBattleWorldPoint } from '../src/render/CanvasRenderer';
 
 interface Assertions {
   equal(actual: unknown, expected: unknown, message?: string): void;
@@ -40,7 +40,7 @@ function advanceUntil(
 }
 
 const schemaProbe = createBattleSimulation(createStage01Bundle(), 0x51a7e);
-assert.equal(parsedCheckpoint(schemaProbe).schemaVersion, 5, 'Current checkpoint schema');
+assert.equal(parsedCheckpoint(schemaProbe).schemaVersion, 6, 'Current checkpoint schema');
 
 const precisionBundle = createStage01Bundle();
 const precisionWave = precisionBundle.waves[0];
@@ -49,6 +49,9 @@ assert.ok(precisionWave && precisionEnemy, 'Precision probe content is missing.'
 precisionWave.groups = [{ enemyId: precisionEnemy.id, count: 3, intervalTicks: 1 }];
 precisionEnemy.maxHpMilli = 1_000_000;
 precisionEnemy.armorBp = 0;
+// Keep this mechanic probe anchored to the original 24-damage fixture so
+// campaign balance tuning does not change the precision/volley expectations.
+precisionBundle.tower.baseDamageMilli = 24_000;
 precisionBundle.tower.rangePx = 5_000;
 precisionBundle.tower.projectileSpeedPxPerSecond = 100_000;
 precisionBundle.tower.critChanceBp = 0;
@@ -181,6 +184,8 @@ const firstBreach = firstBreachRun.events.find(
 assert.ok(firstBreach, 'First breach event is missing.');
 assert.ok(firstBreach.gateIntegrityRemaining > 0, 'The first weak leak should not end the run.');
 assert.equal(gateSimulation.getHudProjection().flowState, 'running');
+const firstBreachSnapshot = gateSimulation.getRenderSnapshot();
+const firstBreachHud = structuredClone(gateSimulation.getHudProjection());
 const defeatRun = advanceUntil(
   gateSimulation,
   (output) => output.events.some((event) => event.type === 'DEFEAT'),
@@ -228,9 +233,13 @@ assert.equal(reviveSimulation.getHudProjection().flowState, 'result');
 assert.equal(reviveSimulation.getHudProjection().outcome, 'defeat');
 
 const gradient = { addColorStop(): void {} };
+const renderedTexts: string[] = [];
 const drawingContext = new Proxy<Record<string, unknown>>({}, {
   get(_target, property): unknown {
     if (property === 'measureText') return (text: string) => ({ width: text.length * 10 });
+    if (property === 'fillText' || property === 'strokeText') {
+      return (text: string) => { renderedTexts.push(text); };
+    }
     if (property === 'createLinearGradient' || property === 'createRadialGradient') {
       return () => gradient;
     }
@@ -258,6 +267,32 @@ const rendererRuntime: MiniGameRuntime = {
   requestFrame: () => 1,
   cancelFrame: () => undefined,
 };
+const breachRenderer = new CanvasRenderer(rendererRuntime, gateBundle);
+const projectedThirdTower = projectBattleWorldPoint(gateBundle.route.towerAnchors[2]);
+assert.equal(
+  breachRenderer.hitTestTower(projectedThirdTower),
+  2,
+  'The visible third tower must remain directly selectable after the world-camera projection.',
+);
+assert.ok(
+  !breachRenderer.isBattleHudPoint(projectedThirdTower),
+  'The visible third tower must not sit inside a bottom HUD interaction zone.',
+);
+breachRenderer.pushEvents(firstBreachRun.output.events, firstBreachSnapshot);
+breachRenderer.drawBattle({
+  snapshot: firstBreachSnapshot,
+  hud: firstBreachHud,
+  muted: false,
+  selectedTowerId: 0,
+  victory: false,
+});
+assert.ok(
+  renderedTexts.some((text) => text.includes(
+    `关门受损 -${firstBreach.damage} · ${firstBreach.gateIntegrityRemaining}/${firstBreach.gateIntegrityMax}`,
+  )),
+  'A breach must show its damage and remaining gate integrity at the visible gate.',
+);
+renderedTexts.length = 0;
 const defeatRenderer = new CanvasRenderer(rendererRuntime, reviveBundle);
 defeatRenderer.drawBattle({
   snapshot: reviveSimulation.getRenderSnapshot(),
@@ -266,6 +301,14 @@ defeatRenderer.drawBattle({
   selectedTowerId: 0,
   victory: false,
 });
+assert.ok(
+  renderedTexts.some((text) => text.includes('关门耐久归零')),
+  'A fixed defeat must explain that gate integrity reached zero.',
+);
+assert.ok(
+  !renderedTexts.some((text) => text.includes('一名潮军越过了守线')),
+  'A fixed defeat must not imply that any single leak always ends the run.',
+);
 assert.equal(
   defeatRenderer.hitTest({ x: 960, y: 743 }),
   'overlay-retry',
