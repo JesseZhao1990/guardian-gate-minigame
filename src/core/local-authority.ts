@@ -60,6 +60,7 @@ const MAX_PERSISTED_SEQUENCE = Number.MAX_SAFE_INTEGER - SEQUENCE_RESERVE;
 const MAX_PURPLE_PITY = 9;
 const MAX_CONSECUTIVE_GREEN_SLOTS = 4;
 const FIXED_CAMPAIGN_REROLL_BUDGET = 3;
+const TOWER_COUNT_EFFECT_ID: CardEffectId = 'tower-count';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -138,10 +139,15 @@ export class LocalPracticeAuthority {
     const nextOfferSerial = this.nextSequence(this.offerSerial, 'offer');
 
     const effects = this.resolveEligibleEffects(offerOrdinal, replacesOfferId, eligibleEffectIds);
-    const distinctEffects = [...effects];
+    const includesTowerReinforcement = effects.includes(TOWER_COUNT_EFFECT_ID);
+    const randomEffects = includesTowerReinforcement
+      ? effects.filter((effectId) => effectId !== TOWER_COUNT_EFFECT_ID)
+      : effects;
+    const randomSlotCount = includesTowerReinforcement ? 2 : 3;
+    const distinctEffects = [...randomEffects];
     const selectedEffects: CardEffectId[] = [];
-    while (selectedEffects.length < 3) {
-      const source = distinctEffects.length > 0 ? distinctEffects : effects;
+    while (selectedEffects.length < randomSlotCount) {
+      const source = distinctEffects.length > 0 ? distinctEffects : randomEffects;
       const index = this.rng.nextInt(source.length);
       const effect = distinctEffects.length > 0
         ? distinctEffects.splice(index, 1)[0]
@@ -156,7 +162,14 @@ export class LocalPracticeAuthority {
       const card = this.uniqueCardFor(effectId, quality, selectedCardIds);
       selectedCardIds.add(card.id);
       return card.id;
-    }) as [string, string, string];
+    });
+    if (includesTowerReinforcement) {
+      selectedCards.push(this.cardFor(TOWER_COUNT_EFFECT_ID, 'G').id);
+    }
+    if (selectedCards.length !== 3) {
+      throw new Error(`offer ordinal ${offerOrdinal} could not resolve three cards`);
+    }
+    const offerCards = selectedCards as [string, string, string];
 
     const offerId = `practice-offer-${offerOrdinal}-${nextOfferSerial}`;
     const event: OfferGranted = {
@@ -165,7 +178,7 @@ export class LocalPracticeAuthority {
       authorizationId: `practice-auth-${nextAuthoritySeq}`,
       offerId,
       ...(replacesOfferId ? { replacesOfferId } : {}),
-      cards: selectedCards,
+      cards: offerCards,
     };
     this.offerSerial = nextOfferSerial;
     this.authoritySeq = nextAuthoritySeq;
@@ -306,6 +319,12 @@ export class LocalPracticeAuthority {
     );
     if (availableCardCount < 3) {
       throw new Error(`offer ordinal ${offerOrdinal} has fewer than three eligible cards`);
+    }
+    if (
+      eligible.includes(TOWER_COUNT_EFFECT_ID) &&
+      availableCardCount - (this.cardsByEffect.get(TOWER_COUNT_EFFECT_ID)?.size ?? 0) < 2
+    ) {
+      throw new Error(`offer ordinal ${offerOrdinal} has fewer than two eligible skill cards`);
     }
     this.eligibleEffectsByOrdinal.set(offerOrdinal, [...eligible]);
     return [...eligible];
@@ -555,7 +574,11 @@ export class LocalPracticeAuthority {
         : this.eligibleEffectsByOrdinal.get(offerOrdinal);
       if (
         eligible === undefined ||
-        event.cards.some((cardId) => !eligible.includes(this.cardById(cardId).effectId))
+        event.cards.some((cardId) => !eligible.includes(this.cardById(cardId).effectId)) ||
+        (eligible.includes(TOWER_COUNT_EFFECT_ID) &&
+          !event.cards.some(
+            (cardId) => this.cardById(cardId).effectId === TOWER_COUNT_EFFECT_ID,
+          ))
       ) {
         throw new Error(`Authority snapshot offer ${offerId} violates its eligible effects.`);
       }

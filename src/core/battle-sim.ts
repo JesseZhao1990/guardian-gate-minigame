@@ -38,8 +38,14 @@ import {
   type TowerId,
   type TowerRuntimeProjectionV1,
 } from './contracts';
+import {
+  isLegacyWarlessConfigHash,
+  legacyWarlessWaveDerivation,
+  type LegacyWarlessWaveDerivationV1,
+} from './content-compat';
 
-const CHECKPOINT_SCHEMA_VERSION = 5;
+const CHECKPOINT_SCHEMA_VERSION = 6;
+const LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION = 5;
 const LEGACY_GATELESS_CHECKPOINT_SCHEMA_VERSION = 4;
 const LEGACY_INDEPENDENT_AIM_CHECKPOINT_SCHEMA_VERSION = 3;
 const LEGACY_SHARED_AIM_CHECKPOINT_SCHEMA_VERSION = 2;
@@ -75,7 +81,7 @@ const MAX_MOVEMENT_SPEED_PX_PER_SECOND = Math.floor(
 );
 const ENDLESS_ENEMY_ID_SEQUENCE_RESERVE = 121;
 const PROJECTILE_ID_SEQUENCE_RESERVE = 3 * MAX_ARROW_COUNT;
-const EVENT_SEQUENCE_PER_PROJECTILE_RESERVE = 2 * (MAX_PENETRATION_COUNT + 1);
+const EVENT_SEQUENCE_PER_PROJECTILE_RESERVE = 5 * (MAX_PENETRATION_COUNT + 1);
 const EVENT_SEQUENCE_PER_TICK_LIFETIME_RESERVE = 1_024;
 const AUTHORITY_SEQUENCE_RESERVE = 1;
 const COMMAND_SEQUENCE_RESERVE = 1;
@@ -234,6 +240,18 @@ interface SerializableState {
   exp: number;
   stats: PlayerStats;
   activeOffer: OfferGranted | null;
+  warPointsBalance: number;
+  warPointsEarned: number;
+  activeTowerIds: TowerId[];
+  shopOfferOrdinal: number;
+  shopOfferWaveIndex: number;
+  shopPurchasedWaveIndex: number;
+  shopPurchasesInWave: number;
+  shopReturnFlowState: 'running' | 'paused' | null;
+  waveBaseWarPoints: number;
+  waveFocusedKills: number;
+  waveFocusBonusAwarded: number;
+  waveBreached: boolean;
   revivesUsed: number;
   reviveGuardRemainingTicks: number;
   gateIntegrity: number;
@@ -251,6 +269,22 @@ interface SerializableState {
   wallTickRemainder: number;
 }
 
+type LegacySerializableStateV5 = Omit<
+  SerializableState,
+  | 'warPointsBalance'
+  | 'warPointsEarned'
+  | 'activeTowerIds'
+  | 'shopOfferOrdinal'
+  | 'shopOfferWaveIndex'
+  | 'shopPurchasedWaveIndex'
+  | 'shopPurchasesInWave'
+  | 'shopReturnFlowState'
+  | 'waveBaseWarPoints'
+  | 'waveFocusedKills'
+  | 'waveFocusBonusAwarded'
+  | 'waveBreached'
+>;
+
 interface CheckpointEnvelope {
   schemaVersion: typeof CHECKPOINT_SCHEMA_VERSION;
   releaseId: string;
@@ -258,10 +292,17 @@ interface CheckpointEnvelope {
   state: SerializableState;
 }
 
+interface LegacyWarlessCheckpointEnvelope {
+  schemaVersion: typeof LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION;
+  releaseId: string;
+  configHash: string;
+  state: LegacySerializableStateV5;
+}
+
 type LegacyProjectileStateV4 = Omit<ProjectileState, 'focused'>;
 
 type LegacySerializableStateV4 = Omit<
-  SerializableState,
+  LegacySerializableStateV5,
   | 'projectiles'
   | 'gateIntegrity'
   | 'overdriveCharge'
@@ -606,6 +647,17 @@ function applyCardEffectToStats(
       capped = stats.critDamageAddBp !== requested;
       break;
     }
+    case 'critical-mastery': {
+      const requestedChance = stats.critChanceAddBp + (card.valueBp ?? 0);
+      const requestedDamage = stats.critDamageAddBp + (card.secondaryValueBp ?? 0);
+      stats.critChanceAddBp = Math.min(MAX_CRIT_CHANCE_ADD_BP, requestedChance);
+      stats.critDamageAddBp = Math.min(MAX_CRIT_DAMAGE_ADD_BP, requestedDamage);
+      capped = stats.critChanceAddBp !== requestedChance ||
+        stats.critDamageAddBp !== requestedDamage;
+      break;
+    }
+    case 'tower-count':
+      break;
   }
 
   return { stats, capped };
@@ -629,6 +681,11 @@ function isEffectiveCardCapReached(
       return before.critChanceBp + (card.valueBp ?? 0) > MAX_CRIT_CHANCE_BP;
     case 'crit-damage':
       return before.critDamageBp + (card.valueBp ?? 0) > MAX_CRIT_DAMAGE_BP;
+    case 'critical-mastery':
+      return before.critChanceBp + (card.valueBp ?? 0) > MAX_CRIT_CHANCE_BP ||
+        before.critDamageBp + (card.secondaryValueBp ?? 0) > MAX_CRIT_DAMAGE_BP;
+    case 'tower-count':
+      return false;
     case 'tower-frequency':
       return before.attackIntervalTicks <= MIN_ATTACK_INTERVAL_TICKS && (card.valueBp ?? 0) > 0;
     case 'tower-damage':
@@ -665,6 +722,15 @@ function battleMode(bundle: BattleBundleV1): BattleMode {
   return bundle.mode ?? 'fixed';
 }
 
+function initialActiveTowerIds(bundle: BattleBundleV1): TowerId[] {
+  if (battleMode(bundle) === 'endless') {
+    return [0, 1, 2];
+  }
+  return [...(bundle.rules.initialActiveTowerIds ?? [0, 1, 2])].sort(
+    (left, right) => left - right,
+  );
+}
+
 function gateIntegrityMax(bundle: BattleBundleV1): number {
   return battleMode(bundle) === 'fixed'
     ? bundle.rules.gateIntegrity ?? DEFAULT_FIXED_GATE_INTEGRITY
@@ -684,6 +750,12 @@ function focusDamageBonusBp(bundle: BattleBundleV1): number {
 function overdriveDurationTicks(bundle: BattleBundleV1): number {
   return battleMode(bundle) === 'fixed'
     ? bundle.rules.overdriveDurationTicks ?? DEFAULT_OVERDRIVE_DURATION_TICKS
+    : 0;
+}
+
+function shopPurchaseLimitPerWave(bundle: BattleBundleV1): number {
+  return battleMode(bundle) === 'fixed'
+    ? bundle.rules.shopPurchaseLimitPerWave ?? 1
     : 0;
 }
 
@@ -766,7 +838,8 @@ class BattleSimulationImpl implements BattleSimulation {
           !Number.isInteger(command.towerId) ||
           command.towerId < 0 ||
           command.towerId >= this.state.aimAnglesU16.length ||
-          !Number.isInteger(command.angleU16)
+          !Number.isInteger(command.angleU16) ||
+          !this.isTowerActive(command.towerId)
         ) {
           status = 'rejected';
         } else {
@@ -783,7 +856,8 @@ class BattleSimulationImpl implements BattleSimulation {
           this.state.overdriveRemainingTicks !== 0 ||
           !Number.isInteger(command.towerId) ||
           command.towerId < 0 ||
-          command.towerId >= this.bundle.route.towerAnchors.length
+          command.towerId >= this.bundle.route.towerAnchors.length ||
+          !this.isTowerActive(command.towerId)
         ) {
           status = 'rejected';
         } else {
@@ -799,6 +873,16 @@ class BattleSimulationImpl implements BattleSimulation {
             towerId: command.towerId,
             durationTicks: this.state.overdriveRemainingTicks,
           });
+        }
+        break;
+      case 'OPEN_SHOP':
+        if (!this.openShop(output)) {
+          status = 'rejected';
+        }
+        break;
+      case 'CLOSE_SHOP':
+        if (!this.closeShop()) {
+          status = 'rejected';
         }
         break;
       case 'SET_SPEED':
@@ -981,10 +1065,21 @@ class BattleSimulationImpl implements BattleSimulation {
       towerStatCaps(this.bundle),
     );
     const towerRuntime = this.bundle.route.towerAnchors.map((anchor, towerIndex) => {
+      const towerId = towerIndex as TowerId;
+      const active = this.isTowerActive(towerId);
+      if (!active) {
+        return {
+          towerId,
+          active: false,
+          enemiesInRange: 0,
+          preferredEnemiesInRange: 0,
+        };
+      }
       const targeting = this.towerTargetingSnapshot(anchor, towerIndex, currentStats.rangePx);
       const target = targeting.targets[0];
       const common = {
-        towerId: towerIndex as TowerId,
+        towerId,
+        active: true,
         enemiesInRange: targeting.enemiesInRange,
         preferredEnemiesInRange: targeting.preferredEnemiesInRange,
       };
@@ -1007,10 +1102,19 @@ class BattleSimulationImpl implements BattleSimulation {
       level: this.state.level,
       exp: this.state.exp,
       expRequired: requiredExp(this.state.level, this.bundle.rules.maxLevel),
+      warPointsBalance: this.state.warPointsBalance,
+      warPointsEarned: this.state.warPointsEarned,
       waveIndex,
       waveCount,
       progressBp,
       aimAnglesU16: [...this.state.aimAnglesU16] as TowerAimAnglesU16,
+      activeTowerIds: [...this.state.activeTowerIds],
+      shopAvailable: this.isShopAvailable(),
+      shopPurchasesThisWave: this.state.shopPurchasesInWave,
+      shopPurchaseLimitPerWave: shopPurchaseLimitPerWave(this.bundle),
+      shopPurchasedThisWave:
+        battleMode(this.bundle) === 'fixed' &&
+        this.state.shopPurchasesInWave >= shopPurchaseLimitPerWave(this.bundle),
       revivesUsed: this.state.revivesUsed,
       gateIntegrity: this.state.gateIntegrity,
       gateIntegrityMax: gateIntegrityMax(this.bundle),
@@ -1032,7 +1136,7 @@ class BattleSimulationImpl implements BattleSimulation {
       ...(endlessProjection === undefined ? {} : { endless: endlessProjection }),
     } satisfies Omit<HudProjectionV1, 'activeOffer' | 'offerPreviews'>;
 
-    if (this.state.activeOffer === null) {
+    if (this.state.flowState !== 'offer-pending' || this.state.activeOffer === null) {
       return projection;
     }
 
@@ -1042,6 +1146,10 @@ class BattleSimulationImpl implements BattleSimulation {
         throw new Error(`Active offer contains unknown card ${cardId}.`);
       }
       const applied = applyCardEffectToStats(this.state.stats, card);
+      const towerCountBefore = this.state.activeTowerIds.length;
+      const towerCountAfter = card.effectId === 'tower-count'
+        ? Math.min(this.bundle.route.towerAnchors.length, towerCountBefore + (card.valueInt ?? 1))
+        : undefined;
       return {
         cardId,
         before: currentStats,
@@ -1056,6 +1164,10 @@ class BattleSimulationImpl implements BattleSimulation {
           card,
           towerStatCaps(this.bundle),
         ),
+        warPointCost: battleMode(this.bundle) === 'fixed' ? this.cardWarPointCost(card) : 0,
+        ...(towerCountAfter === undefined
+          ? {}
+          : { towerCountBefore, towerCountAfter }),
       };
     }) satisfies TowerCardPreviewV1[];
 
@@ -1094,6 +1206,9 @@ class BattleSimulationImpl implements BattleSimulation {
     const towerFacingCacheKey = `${this.state.tick}:${this.state.lastCommandSeq}:${this.state.lastAuthoritySeq}`;
     if (this.towerFacingCacheKey !== towerFacingCacheKey) {
       this.towerFacingCache = this.bundle.route.towerAnchors.map((anchor, towerIndex) => {
+        if (!this.isTowerActive(towerIndex as TowerId)) {
+          return this.state.aimAnglesU16[towerIndex] ?? DEFAULT_AIM_ANGLE_U16;
+        }
         const target = this.legalTargets(anchor, towerIndex)[0];
         if (!target) {
           return this.state.aimAnglesU16[towerIndex] ?? DEFAULT_AIM_ANGLE_U16;
@@ -1172,6 +1287,18 @@ class BattleSimulationImpl implements BattleSimulation {
       exp: this.state.exp,
       stats: this.state.stats,
       activeOffer: this.state.activeOffer,
+      warPointsBalance: this.state.warPointsBalance,
+      warPointsEarned: this.state.warPointsEarned,
+      activeTowerIds: this.state.activeTowerIds,
+      shopOfferOrdinal: this.state.shopOfferOrdinal,
+      shopOfferWaveIndex: this.state.shopOfferWaveIndex,
+      shopPurchasedWaveIndex: this.state.shopPurchasedWaveIndex,
+      shopPurchasesInWave: this.state.shopPurchasesInWave,
+      shopReturnFlowState: this.state.shopReturnFlowState,
+      waveBaseWarPoints: this.state.waveBaseWarPoints,
+      waveFocusedKills: this.state.waveFocusedKills,
+      waveFocusBonusAwarded: this.state.waveFocusBonusAwarded,
+      waveBreached: this.state.waveBreached,
       revivesUsed: this.state.revivesUsed,
       reviveGuardRemainingTicks: this.state.reviveGuardRemainingTicks,
       gateIntegrity: this.state.gateIntegrity,
@@ -1282,6 +1409,31 @@ class BattleSimulationImpl implements BattleSimulation {
           bundle.rules.overdriveDurationTicks < TICKS_PER_SECOND ||
           bundle.rules.overdriveDurationTicks > 30 * TICKS_PER_SECOND
         ))
+      )) ||
+      (bundle.rules.initialActiveTowerIds !== undefined && (
+        !Array.isArray(bundle.rules.initialActiveTowerIds) ||
+        bundle.rules.initialActiveTowerIds.length < 1 ||
+        bundle.rules.initialActiveTowerIds.length > bundle.route.towerAnchors.length ||
+        new Set(bundle.rules.initialActiveTowerIds).size !==
+          bundle.rules.initialActiveTowerIds.length ||
+        bundle.rules.initialActiveTowerIds.some(
+          (towerId) => !Number.isInteger(towerId) || towerId < 0 || towerId > 2,
+        )
+      )) ||
+      (bundle.rules.towerBuildCost !== undefined && (
+        !Number.isSafeInteger(bundle.rules.towerBuildCost) ||
+        bundle.rules.towerBuildCost <= 0 ||
+        bundle.rules.towerBuildCost > 10_000
+      )) ||
+      (bundle.rules.towerUnlockCompletedWaves !== undefined && (
+        !Number.isSafeInteger(bundle.rules.towerUnlockCompletedWaves) ||
+        bundle.rules.towerUnlockCompletedWaves < 0 ||
+        bundle.rules.towerUnlockCompletedWaves > bundle.waves.length
+      )) ||
+      (bundle.rules.shopPurchaseLimitPerWave !== undefined && (
+        !Number.isSafeInteger(bundle.rules.shopPurchaseLimitPerWave) ||
+        bundle.rules.shopPurchaseLimitPerWave < 1 ||
+        bundle.rules.shopPurchaseLimitPerWave > 5
       ))
     ) {
       throw new Error('Battle progression, gate, focus, or overdrive rules are invalid.');
@@ -1295,7 +1447,11 @@ class BattleSimulationImpl implements BattleSimulation {
         bundle.rules.arrowCountCap !== undefined ||
         bundle.rules.penetrationCap !== undefined ||
         bundle.rules.volleyDamageFalloffBp !== undefined ||
-        bundle.rules.overdriveDurationTicks !== undefined
+        bundle.rules.overdriveDurationTicks !== undefined ||
+        bundle.rules.initialActiveTowerIds !== undefined ||
+        bundle.rules.towerBuildCost !== undefined ||
+        bundle.rules.towerUnlockCompletedWaves !== undefined ||
+        bundle.rules.shopPurchaseLimitPerWave !== undefined
       )
     ) {
       throw new Error('Endless content must retain the Stage 08 breach and targeting contract.');
@@ -1371,6 +1527,50 @@ class BattleSimulationImpl implements BattleSimulation {
       }
     } else if (bundle.endless !== undefined) {
       throw new Error('Fixed battle content cannot include endless rules.');
+    }
+    if (new Set(bundle.cards.map((card) => card.id)).size !== bundle.cards.length) {
+      throw new Error('Battle cards require unique ids.');
+    }
+    for (const card of bundle.cards) {
+      if (
+        !card.id ||
+        !card.name ||
+        (card.warPointCost !== undefined && (
+          !Number.isSafeInteger(card.warPointCost) ||
+          card.warPointCost <= 0 ||
+          card.warPointCost > 10_000
+        )) ||
+        (card.effectId === 'critical-mastery' && (
+          !Number.isInteger(card.valueBp) ||
+          card.valueBp! <= 0 ||
+          !Number.isInteger(card.secondaryValueBp) ||
+          card.secondaryValueBp! <= 0
+        )) ||
+        (card.effectId === 'tower-count' && (
+          card.valueInt !== 1 ||
+          card.warPointCost !== undefined
+        ))
+      ) {
+        throw new Error(`Card ${card.id || '<missing>'} has invalid war-point content.`);
+      }
+      if (
+        mode === 'endless' &&
+        (card.warPointCost !== undefined ||
+          card.effectId === 'critical-mastery' ||
+          card.effectId === 'tower-count')
+      ) {
+        throw new Error('Endless cards must retain the free Stage 08 upgrade contract.');
+      }
+    }
+    const configuredActiveTowers = initialActiveTowerIds(bundle);
+    if (
+      mode === 'fixed' &&
+      configuredActiveTowers.length < bundle.route.towerAnchors.length &&
+      (!Number.isSafeInteger(bundle.rules.towerBuildCost) ||
+        !Number.isSafeInteger(bundle.rules.towerUnlockCompletedWaves) ||
+        !bundle.cards.some((card) => card.effectId === 'tower-count'))
+    ) {
+      throw new Error('A fixed stage with locked towers requires a priced reinforcement card.');
     }
     for (const [waveIndex, wave] of bundle.waves.entries()) {
       if (
@@ -1542,6 +1742,18 @@ class BattleSimulationImpl implements BattleSimulation {
         critDamageAddBp: 0,
       },
       activeOffer: null,
+      warPointsBalance: 0,
+      warPointsEarned: 0,
+      activeTowerIds: initialActiveTowerIds(this.bundle),
+      shopOfferOrdinal: 0,
+      shopOfferWaveIndex: -1,
+      shopPurchasedWaveIndex: -1,
+      shopPurchasesInWave: 0,
+      shopReturnFlowState: null,
+      waveBaseWarPoints: 0,
+      waveFocusedKills: 0,
+      waveFocusBonusAwarded: 0,
+      waveBreached: false,
       revivesUsed: 0,
       reviveGuardRemainingTicks: 0,
       gateIntegrity: gateIntegrityMax(this.bundle),
@@ -1573,6 +1785,7 @@ class BattleSimulationImpl implements BattleSimulation {
     const schemaVersion = (parsed as { schemaVersion?: unknown }).schemaVersion;
     if (
       schemaVersion !== CHECKPOINT_SCHEMA_VERSION &&
+      schemaVersion !== LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION &&
       schemaVersion !== LEGACY_GATELESS_CHECKPOINT_SCHEMA_VERSION &&
       schemaVersion !== LEGACY_INDEPENDENT_AIM_CHECKPOINT_SCHEMA_VERSION &&
       schemaVersion !== LEGACY_SHARED_AIM_CHECKPOINT_SCHEMA_VERSION
@@ -1581,10 +1794,21 @@ class BattleSimulationImpl implements BattleSimulation {
     }
     const envelope = parsed as
       | CheckpointEnvelope
+      | LegacyWarlessCheckpointEnvelope
       | LegacyGatelessCheckpointEnvelope
       | LegacyIndependentAimCheckpointEnvelope
       | LegacySharedAimCheckpointEnvelope;
-    if (envelope.releaseId !== this.bundle.releaseId || envelope.configHash !== this.bundle.configHash) {
+    const legacyWarlessHashMatches =
+      envelope.schemaVersion <= LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION &&
+      battleMode(this.bundle) === 'fixed' &&
+      isLegacyWarlessConfigHash(this.bundle.stage.id, envelope.configHash);
+    const legacyWarlessConfigHash = legacyWarlessHashMatches
+      ? envelope.configHash
+      : undefined;
+    if (
+      envelope.releaseId !== this.bundle.releaseId ||
+      (envelope.configHash !== this.bundle.configHash && !legacyWarlessHashMatches)
+    ) {
       throw new Error('Checkpoint release does not match the supplied battle bundle.');
     }
     const normalizedSeed = seed >>> 0 || 0x6d2b79f5;
@@ -1606,10 +1830,13 @@ class BattleSimulationImpl implements BattleSimulation {
       }
       const { aimAngleU16, ...legacyState } = envelope.state;
       const normalizedAngle = aimAngleU16 & 0xffff;
-      return this.migrateLegacyState({
-        ...legacyState,
-        aimAnglesU16: [normalizedAngle, normalizedAngle, normalizedAngle],
-      });
+      return this.migrateLegacyState(
+        {
+          ...legacyState,
+          aimAnglesU16: [normalizedAngle, normalizedAngle, normalizedAngle],
+        },
+        legacyWarlessConfigHash,
+      );
     }
     if (
       !Array.isArray(envelope.state.aimAnglesU16) ||
@@ -1619,10 +1846,13 @@ class BattleSimulationImpl implements BattleSimulation {
       throw new Error('Checkpoint tower aim angles are malformed.');
     }
     if (envelope.schemaVersion === LEGACY_INDEPENDENT_AIM_CHECKPOINT_SCHEMA_VERSION) {
-      return this.migrateLegacyState(envelope.state);
+      return this.migrateLegacyState(envelope.state, legacyWarlessConfigHash);
     }
     if (envelope.schemaVersion === LEGACY_GATELESS_CHECKPOINT_SCHEMA_VERSION) {
-      return this.migrateGatelessState(envelope.state);
+      return this.migrateGatelessState(envelope.state, legacyWarlessConfigHash);
+    }
+    if (envelope.schemaVersion === LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION) {
+      return this.migrateWarlessState(envelope.state, legacyWarlessConfigHash);
     }
     if (
       (battleMode(this.bundle) === 'endless' && envelope.state.endless === null) ||
@@ -1635,7 +1865,10 @@ class BattleSimulationImpl implements BattleSimulation {
     return restored;
   }
 
-  private migrateLegacyState(state: LegacySerializableStateV3): SerializableState {
+  private migrateLegacyState(
+    state: LegacySerializableStateV3,
+    legacyWarlessConfigHash?: string,
+  ): SerializableState {
     const cloned = JSON.parse(JSON.stringify(state)) as LegacySerializableStateV3;
     const maximumEnemyId = cloned.enemies.reduce(
       (maximum, enemy) => Math.max(maximum, enemy.entityId),
@@ -1645,9 +1878,17 @@ class BattleSimulationImpl implements BattleSimulation {
       ...cloned,
       enemies: cloned.enemies.map((enemy) => {
         const encodedWaveIndex = (enemy.entityId >>> 20) - 1;
+        const legacyWave = legacyWarlessConfigHash === undefined
+          ? undefined
+          : legacyWarlessWaveDerivation(
+              this.bundle.stage.id,
+              legacyWarlessConfigHash,
+              encodedWaveIndex,
+            );
         return {
           ...enemy,
           speedMultiplierBp: enemy.speedMultiplierBp ??
+            legacyWave?.speedMultiplierBp ??
             this.bundle.waves[encodedWaveIndex]?.speedMultiplierBp ??
             10_000,
         };
@@ -1660,12 +1901,15 @@ class BattleSimulationImpl implements BattleSimulation {
       endless: null,
       nextEnemyId: maximumEnemyId + 1,
     };
-    return this.migrateGatelessState(migrated);
+    return this.migrateGatelessState(migrated, legacyWarlessConfigHash);
   }
 
-  private migrateGatelessState(state: LegacySerializableStateV4): SerializableState {
+  private migrateGatelessState(
+    state: LegacySerializableStateV4,
+    legacyWarlessConfigHash?: string,
+  ): SerializableState {
     const cloned = JSON.parse(JSON.stringify(state)) as LegacySerializableStateV4;
-    const migrated: SerializableState = {
+    const migrated: LegacySerializableStateV5 = {
       ...cloned,
       projectiles: cloned.projectiles.map((projectile) => ({
         ...projectile,
@@ -1679,8 +1923,140 @@ class BattleSimulationImpl implements BattleSimulation {
       overdriveTowerId: null,
       overdriveRemainingTicks: 0,
     };
+    return this.migrateWarlessState(migrated, legacyWarlessConfigHash);
+  }
+
+  private migrateWarlessState(
+    state: LegacySerializableStateV5,
+    legacyWarlessConfigHash?: string,
+  ): SerializableState {
+    const cloned = JSON.parse(JSON.stringify(state)) as LegacySerializableStateV5;
+    if (battleMode(this.bundle) === 'fixed' && legacyWarlessConfigHash !== undefined) {
+      const wave = this.bundle.waves[cloned.scheduler.waveIndex];
+      const legacyWave = legacyWarlessWaveDerivation(
+        this.bundle.stage.id,
+        legacyWarlessConfigHash,
+        cloned.scheduler.waveIndex,
+      );
+      if (wave === undefined || legacyWave === undefined) {
+        throw new Error('Legacy V5 checkpoint references a missing wave derivation.');
+      }
+      cloned.enemies = cloned.enemies.map((enemy) =>
+        this.migrateLegacyWarlessEnemy(cloned, enemy, wave, legacyWave));
+    }
+    if (battleMode(this.bundle) === 'fixed' && cloned.flowState === 'offer-pending') {
+      // V5 fixed stages paused here for a free level-up card. Fixed-stage levels
+      // no longer require a choice, so discard the obsolete offer and resume the
+      // deterministic battle (or finalize a victory that was waiting on it).
+      cloned.activeOffer = null;
+      if (cloned.scheduler.victoryPending) {
+        cloned.scheduler.victoryPending = false;
+        cloned.flowState = 'result';
+        cloned.outcome = 'victory';
+      } else {
+        cloned.flowState = 'running';
+        cloned.outcome = null;
+      }
+      cloned.wallTickRemainder = 0;
+    }
+    const migrated: SerializableState = {
+      ...cloned,
+      warPointsBalance: 0,
+      warPointsEarned: 0,
+      // A legacy run already simulated all three towers. Preserve that combat state
+      // rather than silently weakening an in-progress checkpoint after migration.
+      activeTowerIds: [0, 1, 2],
+      shopOfferOrdinal: battleMode(this.bundle) === 'fixed' ? cloned.level : 0,
+      shopOfferWaveIndex: -1,
+      shopPurchasedWaveIndex: -1,
+      shopPurchasesInWave: 0,
+      shopReturnFlowState: null,
+      waveBaseWarPoints: 0,
+      waveFocusedKills: 0,
+      waveFocusBonusAwarded: 0,
+      waveBreached: false,
+    };
     this.validateCheckpointState(migrated);
     return migrated;
+  }
+
+  private migrateLegacyWarlessEnemy(
+    state: LegacySerializableStateV5,
+    enemy: EnemyState,
+    wave: BattleBundleV1['waves'][number],
+    legacyWave: LegacyWarlessWaveDerivationV1,
+  ): EnemyState {
+    const groupIndex = (enemy.entityId >>> 12) & 0xff;
+    const group = wave.groups[groupIndex];
+    const definition = group === undefined ? undefined : this.bundle.enemies[group.enemyId];
+    if (
+      definition === undefined ||
+      enemy.definitionId !== group?.enemyId ||
+      !Number.isSafeInteger(enemy.hpMilli) ||
+      !Number.isSafeInteger(enemy.maxHpMilli) ||
+      enemy.hpMilli < 0 ||
+      enemy.maxHpMilli <= 0 ||
+      enemy.hpMilli > enemy.maxHpMilli ||
+      !Number.isSafeInteger(enemy.ageTicks) ||
+      enemy.ageTicks < 0 ||
+      !Number.isSafeInteger(enemy.distanceMilli) ||
+      enemy.distanceMilli < 0
+    ) {
+      throw new Error(`Legacy V5 checkpoint enemy ${enemy.entityId} is malformed.`);
+    }
+
+    const legacyWaveDefinition: BattleBundleV1['waves'][number] = {
+      ...wave,
+      hpMultiplierBp: legacyWave.hpMultiplierBp,
+      expMultiplierBp: legacyWave.expMultiplierBp,
+      speedMultiplierBp: legacyWave.speedMultiplierBp,
+    };
+    const expectedLegacyMaxHpMilli = mulBp(
+      definition.maxHpMilli,
+      legacyWave.hpMultiplierBp,
+    );
+    const expectedLegacyExpAward = Math.max(
+      1,
+      Math.floor((definition.exp * legacyWave.expMultiplierBp) / 10_000),
+    );
+    if (
+      enemy.maxHpMilli !== expectedLegacyMaxHpMilli ||
+      enemy.expAward !== expectedLegacyExpAward ||
+      enemy.speedMultiplierBp !== legacyWave.speedMultiplierBp ||
+      enemy.ageTicks > this.maximumFixedEnemyLifetimeTicks(legacyWaveDefinition, definition) ||
+      enemy.distanceMilli < this.minimumFixedEnemyDistanceMilli(
+        state,
+        legacyWaveDefinition,
+        enemy,
+        definition,
+      )
+    ) {
+      throw new Error(
+        `Legacy V5 checkpoint enemy ${enemy.entityId} does not match its shipped wave derivation.`,
+      );
+    }
+
+    const maxHpMilli = mulBp(definition.maxHpMilli, wave.hpMultiplierBp);
+    const hpMilli = enemy.hpMilli === 0
+      ? 0
+      : Math.max(
+          1,
+          Number(
+            (BigInt(enemy.hpMilli) * BigInt(maxHpMilli) +
+              BigInt(Math.floor(enemy.maxHpMilli / 2))) /
+              BigInt(enemy.maxHpMilli),
+          ),
+        );
+    return {
+      ...enemy,
+      hpMilli,
+      maxHpMilli,
+      expAward: Math.max(
+        1,
+        Math.floor((definition.exp * wave.expMultiplierBp) / 10_000),
+      ),
+      speedMultiplierBp: wave.speedMultiplierBp ?? 10_000,
+    };
   }
 
   private validateCheckpointState(state: SerializableState): void {
@@ -1781,6 +2157,61 @@ class BattleSimulationImpl implements BattleSimulation {
       !Number.isSafeInteger(stats.critDamageAddBp) ||
       stats.critDamageAddBp < 0 ||
       stats.critDamageAddBp > MAX_CRIT_DAMAGE_ADD_BP ||
+      !Number.isSafeInteger(state.warPointsBalance) ||
+      state.warPointsBalance < 0 ||
+      !Number.isSafeInteger(state.warPointsEarned) ||
+      state.warPointsEarned < 0 ||
+      state.warPointsBalance > state.warPointsEarned ||
+      !Array.isArray(state.activeTowerIds) ||
+      state.activeTowerIds.length < 1 ||
+      state.activeTowerIds.length > this.bundle.route.towerAnchors.length ||
+      new Set(state.activeTowerIds).size !== state.activeTowerIds.length ||
+      state.activeTowerIds.some(
+        (towerId) => !Number.isInteger(towerId) || towerId < 0 || towerId > 2,
+      ) ||
+      state.activeTowerIds.some(
+        (towerId, index) => index > 0 && towerId <= state.activeTowerIds[index - 1]!,
+      ) ||
+      initialActiveTowerIds(this.bundle).some(
+        (towerId) => !state.activeTowerIds.includes(towerId),
+      ) ||
+      !Number.isSafeInteger(state.shopOfferOrdinal) ||
+      state.shopOfferOrdinal < 0 ||
+      !Number.isSafeInteger(state.shopOfferWaveIndex) ||
+      state.shopOfferWaveIndex < -1 ||
+      state.shopOfferWaveIndex > scheduler.waveIndex ||
+      !Number.isSafeInteger(state.shopPurchasedWaveIndex) ||
+      state.shopPurchasedWaveIndex < -1 ||
+      state.shopPurchasedWaveIndex > scheduler.waveIndex ||
+      !Number.isSafeInteger(state.shopPurchasesInWave) ||
+      state.shopPurchasesInWave < 0 ||
+      state.shopPurchasesInWave > shopPurchaseLimitPerWave(this.bundle) ||
+      ((state.shopPurchasedWaveIndex === scheduler.waveIndex) !==
+        (state.shopPurchasesInWave > 0)) ||
+      !(['running', 'paused', null] as const).includes(state.shopReturnFlowState) ||
+      !Number.isSafeInteger(state.waveBaseWarPoints) ||
+      state.waveBaseWarPoints < 0 ||
+      !Number.isSafeInteger(state.waveFocusedKills) ||
+      state.waveFocusedKills < 0 ||
+      state.waveFocusedKills > scheduler.currentWaveKilled ||
+      !Number.isSafeInteger(state.waveFocusBonusAwarded) ||
+      state.waveFocusBonusAwarded < 0 ||
+      state.waveFocusBonusAwarded > Math.floor(state.waveBaseWarPoints / 10) ||
+      typeof state.waveBreached !== 'boolean' ||
+      (battleMode(this.bundle) === 'endless' && (
+        state.warPointsBalance !== 0 ||
+        state.warPointsEarned !== 0 ||
+        state.activeTowerIds.length !== this.bundle.route.towerAnchors.length ||
+        state.shopOfferOrdinal !== 0 ||
+        state.shopOfferWaveIndex !== -1 ||
+        state.shopPurchasedWaveIndex !== -1 ||
+        state.shopPurchasesInWave !== 0 ||
+        state.shopReturnFlowState !== null ||
+        state.waveBaseWarPoints !== 0 ||
+        state.waveFocusedKills !== 0 ||
+        state.waveFocusBonusAwarded !== 0 ||
+        state.waveBreached
+      )) ||
       !Number.isSafeInteger(state.revivesUsed) ||
       state.revivesUsed < 0 ||
       state.revivesUsed > this.bundle.rules.maxRevives ||
@@ -1796,7 +2227,8 @@ class BattleSimulationImpl implements BattleSimulation {
       (state.overdriveTowerId !== null && (
         !Number.isSafeInteger(state.overdriveTowerId) ||
         state.overdriveTowerId < 0 ||
-        state.overdriveTowerId >= this.bundle.route.towerAnchors.length
+        state.overdriveTowerId >= this.bundle.route.towerAnchors.length ||
+        !state.activeTowerIds.includes(state.overdriveTowerId)
       )) ||
       !Number.isSafeInteger(state.overdriveRemainingTicks) ||
       state.overdriveRemainingTicks < 0 ||
@@ -1845,7 +2277,20 @@ class BattleSimulationImpl implements BattleSimulation {
       throw new Error('Checkpoint state collections or entity sequences are malformed.');
     }
     const hasActiveOffer = state.activeOffer !== null;
-    if ((state.flowState === 'offer-pending') !== hasActiveOffer) {
+    if (
+      (battleMode(this.bundle) === 'endless' &&
+        (state.flowState === 'offer-pending') !== hasActiveOffer) ||
+      (battleMode(this.bundle) === 'fixed' && (
+        (state.flowState === 'offer-pending') !== (state.shopReturnFlowState !== null) ||
+        (state.flowState === 'offer-pending' && !hasActiveOffer) ||
+        (state.flowState === 'offer-pending' && (
+          state.shopOfferWaveIndex !== state.scheduler.waveIndex ||
+          state.shopPurchasesInWave >= shopPurchaseLimitPerWave(this.bundle)
+        )) ||
+        (hasActiveOffer && state.shopOfferWaveIndex !== state.scheduler.waveIndex) ||
+        ((state.flowState === 'result' || state.flowState === 'defeat-pending') && hasActiveOffer)
+      ))
+    ) {
       throw new Error('Checkpoint offer flow and active offer are inconsistent.');
     }
     if (state.activeOffer !== null) {
@@ -1872,14 +2317,17 @@ class BattleSimulationImpl implements BattleSimulation {
         offer.cards.some(
           (cardId) => typeof cardId !== 'string' || this.cardDefinition(cardId) === undefined,
         ) ||
-        (practiceOrdinalMatch !== null && Number(practiceOrdinalMatch[1]) !== state.level)
+        (practiceOrdinalMatch !== null && Number(practiceOrdinalMatch[1]) !== (
+          battleMode(this.bundle) === 'fixed' ? state.shopOfferOrdinal : state.level
+        ))
       ) {
         throw new Error('Checkpoint active offer is malformed.');
       }
     }
     const maximumEnemyExpAward = this.maximumEnemyExpAward();
     const maximumRunExperienceAward = this.maximumRunExperienceAward();
-    const experienceIsInvalid = state.flowState === 'offer-pending'
+    const experienceIsInvalid =
+      battleMode(this.bundle) === 'endless' && state.flowState === 'offer-pending'
       ? state.level <= 0 ||
         maximumEnemyExpAward <= 0 ||
         state.exp > maximumRunExperienceAward
@@ -2439,7 +2887,7 @@ class BattleSimulationImpl implements BattleSimulation {
   }
 
   private minimumFixedEnemyDistanceMilli(
-    state: SerializableState,
+    state: Pick<SerializableState, 'revivesUsed'>,
     wave: BattleBundleV1['waves'][number],
     enemy: EnemyState,
     definition: EnemyDefinition,
@@ -2832,6 +3280,58 @@ class BattleSimulationImpl implements BattleSimulation {
       throw new Error('Battle experience counter overflow reserve is exhausted.');
     }
     return current + increment;
+  }
+
+  private grantWarPoints(
+    amount: number,
+    source: 'kill' | 'focused-kills' | 'wave-clear',
+    output: SimulationOutput,
+    entityId?: number,
+  ): void {
+    if (battleMode(this.bundle) !== 'fixed' || amount <= 0) return;
+    if (
+      !Number.isSafeInteger(amount) ||
+      this.state.warPointsBalance > Number.MAX_SAFE_INTEGER - amount ||
+      this.state.warPointsEarned > Number.MAX_SAFE_INTEGER - amount
+    ) {
+      throw new Error('War-point counter overflow reserve is exhausted.');
+    }
+    this.state.warPointsBalance += amount;
+    this.state.warPointsEarned += amount;
+    output.events.push({
+      eventId: this.nextEventId(),
+      tick: this.state.tick,
+      type: 'WAR_POINTS_GAINED',
+      amount,
+      balance: this.state.warPointsBalance,
+      source,
+      ...(entityId === undefined ? {} : { entityId }),
+    });
+  }
+
+  private awardKillWarPoints(
+    definition: EnemyDefinition,
+    entityId: number,
+    focused: boolean,
+    output: SimulationOutput,
+  ): void {
+    if (battleMode(this.bundle) !== 'fixed') return;
+    const bounty = clamp(Math.ceil(definition.exp / 4), 2, 30);
+    this.state.waveBaseWarPoints = this.checkedExperienceAdd(
+      this.state.waveBaseWarPoints,
+      bounty,
+    );
+    this.grantWarPoints(bounty, 'kill', output, entityId);
+    if (!focused) return;
+    this.state.waveFocusedKills += 1;
+    const desiredBonus = Math.min(
+      Math.floor(this.state.waveFocusedKills / 3),
+      Math.floor(this.state.waveBaseWarPoints / 10),
+    );
+    const bonusDelta = desiredBonus - this.state.waveFocusBonusAwarded;
+    if (bonusDelta <= 0) return;
+    this.state.waveFocusBonusAwarded = desiredBonus;
+    this.grantWarPoints(bonusDelta, 'focused-kills', output);
   }
 
   private incrementEnemyAge(enemy: EnemyState): void {
@@ -3319,6 +3819,9 @@ class BattleSimulationImpl implements BattleSimulation {
       towerStatCaps(this.bundle),
     );
     for (let towerIndex = 0; towerIndex < this.bundle.route.towerAnchors.length; towerIndex += 1) {
+      if (!this.isTowerActive(towerIndex as TowerId)) {
+        continue;
+      }
       if ((this.state.towerCooldowns[towerIndex] ?? 0) > 0) {
         continue;
       }
@@ -3701,6 +4204,7 @@ class BattleSimulationImpl implements BattleSimulation {
         deathY: impactPoint.yMilli / MILLI_PX,
         movement: definition.movement,
       });
+      this.awardKillWarPoints(definition, enemy.entityId, focused, output);
       this.requestLevelIfReady(output);
     }
   }
@@ -3808,6 +4312,7 @@ class BattleSimulationImpl implements BattleSimulation {
 
     const breachedIds = new Set<number>();
     const maximumIntegrity = gateIntegrityMax(this.bundle);
+    this.state.waveBreached = true;
     for (const breached of breachedEnemies) {
       const definition = this.enemyDefinition(breached.definitionId);
       const damage = Math.min(
@@ -3865,6 +4370,13 @@ class BattleSimulationImpl implements BattleSimulation {
       return;
     }
 
+    if (!this.state.waveBreached && this.state.waveBaseWarPoints > 0) {
+      this.grantWarPoints(
+        Math.max(1, Math.floor(this.state.waveBaseWarPoints / 20)),
+        'wave-clear',
+        output,
+      );
+    }
     scheduler.completedWaves += 1;
     if (scheduler.waveIndex === this.bundle.waves.length - 1) {
       if (this.state.flowState === 'offer-pending') {
@@ -3886,6 +4398,14 @@ class BattleSimulationImpl implements BattleSimulation {
     scheduler.allGroupsSpawned = false;
     scheduler.currentWaveSpawned = 0;
     scheduler.currentWaveKilled = 0;
+    this.state.waveBaseWarPoints = 0;
+    this.state.waveFocusedKills = 0;
+    this.state.waveFocusBonusAwarded = 0;
+    this.state.waveBreached = false;
+    this.state.activeOffer = null;
+    this.state.shopOfferWaveIndex = -1;
+    this.state.shopPurchasesInWave = 0;
+    this.state.shopReturnFlowState = null;
   }
 
   private requestLevelIfReady(output: SimulationOutput): void {
@@ -3908,6 +4428,10 @@ class BattleSimulationImpl implements BattleSimulation {
       type: 'LEVEL_UP',
       level: this.state.level,
     });
+    if (battleMode(this.bundle) === 'fixed') {
+      this.requestLevelIfReady(output);
+      return;
+    }
     const eligibleEffectIds = this.eligibleCardEffectIds();
     if (eligibleEffectIds.length === 0) {
       this.requestLevelIfReady(output);
@@ -3944,15 +4468,97 @@ class BattleSimulationImpl implements BattleSimulation {
       this.state.stats.penetrationAdd < MAX_PENETRATION_ADD &&
       effective.penetrationCount < caps.penetrationCount
     ) eligible.push('penetration');
-    if (
-      this.state.stats.critChanceAddBp < MAX_CRIT_CHANCE_ADD_BP &&
-      effective.critChanceBp < MAX_CRIT_CHANCE_BP
-    ) eligible.push('crit-rate');
-    if (
-      this.state.stats.critDamageAddBp < MAX_CRIT_DAMAGE_ADD_BP &&
-      effective.critDamageBp < MAX_CRIT_DAMAGE_BP
-    ) eligible.push('crit-damage');
+    if (battleMode(this.bundle) === 'fixed') {
+      if (
+        (this.state.stats.critChanceAddBp < MAX_CRIT_CHANCE_ADD_BP &&
+          effective.critChanceBp < MAX_CRIT_CHANCE_BP) ||
+        (this.state.stats.critDamageAddBp < MAX_CRIT_DAMAGE_ADD_BP &&
+          effective.critDamageBp < MAX_CRIT_DAMAGE_BP)
+      ) eligible.push('critical-mastery');
+      if (
+        this.state.activeTowerIds.length < this.bundle.route.towerAnchors.length &&
+        this.state.scheduler.completedWaves >=
+          (this.bundle.rules.towerUnlockCompletedWaves ?? Number.MAX_SAFE_INTEGER) &&
+        this.bundle.rules.towerBuildCost !== undefined
+      ) eligible.push('tower-count');
+    } else {
+      if (
+        this.state.stats.critChanceAddBp < MAX_CRIT_CHANCE_ADD_BP &&
+        effective.critChanceBp < MAX_CRIT_CHANCE_BP
+      ) eligible.push('crit-rate');
+      if (
+        this.state.stats.critDamageAddBp < MAX_CRIT_DAMAGE_ADD_BP &&
+        effective.critDamageBp < MAX_CRIT_DAMAGE_BP
+      ) eligible.push('crit-damage');
+    }
     return eligible;
+  }
+
+  private isTowerActive(towerId: TowerId): boolean {
+    return this.state.activeTowerIds.includes(towerId);
+  }
+
+  private cardWarPointCost(card: CardDefinition): number {
+    const cost = card.effectId === 'tower-count'
+      ? this.bundle.rules.towerBuildCost
+      : card.warPointCost;
+    if (!Number.isSafeInteger(cost) || cost === undefined || cost <= 0) {
+      throw new Error(`Card ${card.id} has no valid war-point cost.`);
+    }
+    return cost;
+  }
+
+  private isShopAvailable(): boolean {
+    if (
+      battleMode(this.bundle) !== 'fixed' ||
+      (this.state.flowState !== 'running' && this.state.flowState !== 'paused') ||
+      this.state.outcome !== null ||
+      this.state.shopPurchasesInWave >= shopPurchaseLimitPerWave(this.bundle)
+    ) {
+      return false;
+    }
+    const eligible = new Set(this.eligibleCardEffectIds());
+    return this.bundle.cards.filter((card) => eligible.has(card.effectId)).length >= 3;
+  }
+
+  private openShop(output: SimulationOutput): boolean {
+    if (!this.isShopAvailable()) return false;
+    const returnFlowState = this.state.flowState as 'running' | 'paused';
+    const waveIndex = this.state.scheduler.waveIndex;
+    if (this.state.shopOfferWaveIndex !== waveIndex) {
+      this.state.activeOffer = null;
+      this.state.shopOfferWaveIndex = -1;
+    }
+    this.state.shopReturnFlowState = returnFlowState;
+    this.state.flowState = 'offer-pending';
+    this.state.wallTickRemainder = 0;
+    if (this.state.activeOffer !== null) return true;
+    if (this.state.shopOfferOrdinal >= Number.MAX_SAFE_INTEGER - 1) {
+      throw new Error('Shop offer sequence is exhausted.');
+    }
+    this.state.shopOfferOrdinal += 1;
+    this.state.shopOfferWaveIndex = waveIndex;
+    output.flowRequests.push({
+      type: 'OFFER',
+      ordinal: this.state.shopOfferOrdinal,
+      tick: this.state.tick,
+      eligibleEffectIds: this.eligibleCardEffectIds(),
+    });
+    return true;
+  }
+
+  private closeShop(): boolean {
+    if (
+      battleMode(this.bundle) !== 'fixed' ||
+      this.state.flowState !== 'offer-pending' ||
+      this.state.shopReturnFlowState === null
+    ) {
+      return false;
+    }
+    this.state.flowState = this.state.shopReturnFlowState;
+    this.state.shopReturnFlowState = null;
+    this.state.wallTickRemainder = 0;
+    return true;
   }
 
   private applyOfferGranted(event: OfferGranted): void {
@@ -3969,8 +4575,15 @@ class BattleSimulationImpl implements BattleSimulation {
       );
     }
     for (const cardId of event.cards) {
-      if (this.cardDefinition(cardId) === undefined) {
+      const card = this.cardDefinition(cardId);
+      if (card === undefined) {
         throw new Error(`Offer ${event.offerId} contains unknown card ${cardId}.`);
+      }
+      if (
+        battleMode(this.bundle) === 'fixed' &&
+        !this.eligibleCardEffectIds().includes(card.effectId)
+      ) {
+        throw new Error(`Offer ${event.offerId} contains ineligible card ${cardId}.`);
       }
     }
     this.state.activeOffer = copyOffer(event);
@@ -3988,6 +4601,48 @@ class BattleSimulationImpl implements BattleSimulation {
     if (!card) {
       throw new Error(`Unknown card ${cardId}.`);
     }
+    if (battleMode(this.bundle) === 'fixed') {
+      if (
+        this.state.shopReturnFlowState === null ||
+        this.state.shopPurchasesInWave >= shopPurchaseLimitPerWave(this.bundle) ||
+        !this.eligibleCardEffectIds().includes(card.effectId)
+      ) {
+        throw new Error(`Card ${cardId} is no longer eligible for purchase.`);
+      }
+      const cost = this.cardWarPointCost(card);
+      if (this.state.warPointsBalance < cost) {
+        throw new Error(`Card ${cardId} requires ${cost} war points.`);
+      }
+      const unlockedTowerId = this.applyCardEffect(card);
+      this.state.warPointsBalance -= cost;
+      this.state.activeOffer = null;
+      this.state.shopPurchasedWaveIndex = this.state.scheduler.waveIndex;
+      this.state.shopPurchasesInWave += 1;
+      this.state.flowState = this.state.shopReturnFlowState;
+      this.state.shopReturnFlowState = null;
+      this.state.wallTickRemainder = 0;
+      output.events.push({
+        eventId: this.nextEventId(),
+        tick: this.state.tick,
+        type: 'CARD_PURCHASED',
+        cardId,
+        cost,
+        balance: this.state.warPointsBalance,
+      });
+      if (unlockedTowerId !== null) {
+        output.events.push({
+          eventId: this.nextEventId(),
+          tick: this.state.tick,
+          type: 'TOWER_UNLOCKED',
+          towerId: unlockedTowerId,
+          activeTowerCount: this.state.activeTowerIds.length,
+        });
+      }
+      if (this.state.flowState === 'running' && this.state.scheduler.victoryPending) {
+        this.finishVictory(output);
+      }
+      return;
+    }
     this.applyCardEffect(card);
     this.state.activeOffer = null;
     this.state.flowState = 'running';
@@ -4000,8 +4655,21 @@ class BattleSimulationImpl implements BattleSimulation {
     }
   }
 
-  private applyCardEffect(card: CardDefinition): void {
+  private applyCardEffect(card: CardDefinition): TowerId | null {
+    if (card.effectId === 'tower-count') {
+      const towerId = ([0, 1, 2] as const).find(
+        (candidate) => !this.state.activeTowerIds.includes(candidate),
+      );
+      if (towerId === undefined) {
+        throw new Error('All tower anchors are already active.');
+      }
+      this.state.activeTowerIds.push(towerId);
+      this.state.activeTowerIds.sort((left, right) => left - right);
+      this.state.towerCooldowns[towerId] = 0;
+      return towerId;
+    }
     this.state.stats = applyCardEffectToStats(this.state.stats, card).stats;
+    return null;
   }
 
   private applyRevive(reviveOrdinal: number, output: SimulationOutput): void {
@@ -4077,6 +4745,9 @@ class BattleSimulationImpl implements BattleSimulation {
     this.state.scheduler.victoryPending = false;
     this.state.flowState = 'result';
     this.state.outcome = 'victory';
+    this.state.activeOffer = null;
+    this.state.shopReturnFlowState = null;
+    this.state.wallTickRemainder = 0;
     this.state.overdriveTowerId = null;
     this.state.overdriveRemainingTicks = 0;
     output.events.push({ eventId: this.nextEventId(), tick: this.state.tick, type: 'VICTORY' });
@@ -4089,6 +4760,7 @@ class BattleSimulationImpl implements BattleSimulation {
     this.state.flowState = 'result';
     this.state.outcome = 'defeat';
     this.state.activeOffer = null;
+    this.state.shopReturnFlowState = null;
     this.state.projectiles = [];
     this.state.wallTickRemainder = 0;
     this.state.overdriveTowerId = null;

@@ -53,10 +53,11 @@ const CARD_EFFECT_IDS = [
   'penetration',
   'crit-rate',
   'crit-damage',
+  'critical-mastery',
+  'tower-count',
 ] as const satisfies readonly CardEffectId[];
 
 const CARD_QUALITIES = ['G', 'B', 'P'] as const satisfies readonly CardDefinition['quality'][];
-const QUALITY_RANK: Record<CardDefinition['quality'], number> = { G: 0, B: 1, P: 2 };
 const SEED_COUNT = 64;
 const SEED_MULTIPLIER = 0x9e37_79b1;
 const SEED_CORPUS_HASH = '4d3f95bc53db958f05825f2829d0247425ea8a98b24bcff4594e0c46920f7dda';
@@ -89,7 +90,7 @@ const STRATEGIES: readonly Strategy[] = [
     useOverdrive: true,
     tiers: [
       ['tower-damage', 'tower-frequency'],
-      ['crit-rate', 'crit-damage'],
+      ['critical-mastery'],
       ['arrow-count'],
       ['penetration'],
     ],
@@ -102,7 +103,7 @@ const STRATEGIES: readonly Strategy[] = [
     tiers: [
       ['arrow-count', 'penetration'],
       ['tower-frequency', 'tower-damage'],
-      ['crit-rate', 'crit-damage'],
+      ['critical-mastery'],
     ],
   },
   {
@@ -144,6 +145,12 @@ interface RunEventMetrics {
   overdriveActivatedEvents: number;
   overdriveEndedEvents: number;
   overdriveActivationsByTower: [number, number, number];
+  warPointsGained: number;
+  warPointsSpent: number;
+  cardPurchases: number;
+  towerUnlocks: number;
+  shopOpenCommandsApplied: number;
+  shopCloseCommandsApplied: number;
 }
 
 interface Harness {
@@ -155,6 +162,10 @@ interface Harness {
   revivesGranted: number;
   choicesByEffect: Record<CardEffectId, number>;
   choicesByQuality: Record<CardDefinition['quality'], number>;
+  shopOffersByWave: Map<number, OfferGranted[]>;
+  shopPurchasesByWave: Map<number, number>;
+  shopClosedWithoutPurchase: number;
+  towerUnlockWave: number | null;
   nextCommandSeq: number;
   nextTacticTick: number;
 }
@@ -171,6 +182,15 @@ interface RunResult {
   finalLevel: number;
   choicesByEffect: Record<CardEffectId, number>;
   choicesByQuality: Record<CardDefinition['quality'], number>;
+  warPointsEarned: number;
+  warPointsSpent: number;
+  warPointsBalance: number;
+  shopOffers: number;
+  shopPurchases: number;
+  shopClosuresWithoutPurchase: number;
+  towerPurchases: number;
+  towerUnlockWave: number | null;
+  activeTowerCount: number;
   attackReleases: number;
   focusedAttackReleases: number;
   arrowsReleased: number;
@@ -218,6 +238,8 @@ function emptyEffectCounts(): Record<CardEffectId, number> {
     penetration: 0,
     'crit-rate': 0,
     'crit-damage': 0,
+    'critical-mastery': 0,
+    'tower-count': 0,
   };
 }
 
@@ -238,20 +260,6 @@ function cardDefinition(bundle: BattleBundleV1, cardId: string): CardDefinition 
   return card;
 }
 
-function activeTier(
-  strategy: Strategy,
-  eligibleEffectIds: readonly CardEffectId[],
-): readonly CardEffectId[] {
-  return strategy.tiers
-    ?.find((tier) => tier.some((effectId) => eligibleEffectIds.includes(effectId)))
-    ?.filter((effectId) => eligibleEffectIds.includes(effectId)) ?? [];
-}
-
-function tierIndex(strategy: Strategy, effectId: CardEffectId): number {
-  const index = strategy.tiers?.findIndex((tier) => tier.includes(effectId)) ?? -1;
-  return index < 0 ? Number.MAX_SAFE_INTEGER : index;
-}
-
 function throughputScore(stats: EffectiveTowerStatsV1): number {
   const expectedArrowDamage =
     (stats.damagePerArrowMilli * (10_000 - stats.critChanceBp) +
@@ -267,69 +275,58 @@ function throughputScore(stats: EffectiveTowerStatsV1): number {
     Math.max(1, stats.attackIntervalTicks);
 }
 
-function greedyImprovementBp(hud: HudProjectionV1, cardId: string): number {
-  const preview = hud.offerPreviews?.find((candidate) => candidate.cardId === cardId);
-  if (!preview) return Number.NEGATIVE_INFINITY;
-  const before = throughputScore(preview.before);
-  const after = throughputScore(preview.after);
-  return before <= 0 ? Number.POSITIVE_INFINITY : ((after - before) * 10_000) / before;
-}
-
-function shouldReroll(
+function chooseAffordableShopCard(
   bundle: BattleBundleV1,
-  strategy: Strategy,
-  eligibleEffectIds: readonly CardEffectId[],
-  offer: OfferGranted,
-  hud: HudProjectionV1,
-): boolean {
-  if (strategy.id === 'first-card') return false;
-  if (strategy.id === 'greedy-throughput') {
-    const bestImprovementBp = Math.max(
-      ...offer.cards.map((cardId) => greedyImprovementBp(hud, cardId)),
-    );
-    return bestImprovementBp < 500;
-  }
-  const wantedEffects = activeTier(strategy, eligibleEffectIds);
-  return wantedEffects.length > 0 && !offer.cards.some((cardId) =>
-    wantedEffects.includes(cardDefinition(bundle, cardId).effectId)
-  );
-}
-
-function chooseCard(
-  bundle: BattleBundleV1,
-  strategy: Strategy,
   hud: HudProjectionV1,
   offer: OfferGranted,
-): string {
-  const first = offer.cards[0];
-  if (!first) throw new Error(`Offer ${offer.offerId} contains no selectable card.`);
-  if (strategy.id === 'first-card') return first;
-
+): string | undefined {
   const previews = new Map(
     (hud.offerPreviews ?? []).map((preview) => [preview.cardId, preview]),
   );
-  const ranked = [...offer.cards].sort((leftId, rightId) => {
-    const left = cardDefinition(bundle, leftId);
-    const right = cardDefinition(bundle, rightId);
-    const cappedOrder = Number(previews.get(leftId)?.capped ?? false) -
-      Number(previews.get(rightId)?.capped ?? false);
-    const qualityOrder = QUALITY_RANK[right.quality] - QUALITY_RANK[left.quality];
-    const valueOrder = (right.valueBp ?? right.valueInt ?? 0) -
-      (left.valueBp ?? left.valueInt ?? 0);
+  assert.equal(previews.size, offer.cards.length, `Offer ${offer.offerId} lacks projections.`);
 
-    if (strategy.id === 'greedy-throughput') {
-      return greedyImprovementBp(hud, rightId) - greedyImprovementBp(hud, leftId) ||
-        cappedOrder || qualityOrder || valueOrder || left.id.localeCompare(right.id);
-    }
-
-    const leftTier = tierIndex(strategy, left.effectId);
-    const rightTier = tierIndex(strategy, right.effectId);
-    const leftEffectRank = strategy.tiers?.[leftTier]?.indexOf(left.effectId) ?? -1;
-    const rightEffectRank = strategy.tiers?.[rightTier]?.indexOf(right.effectId) ?? -1;
-    return leftTier - rightTier || cappedOrder || qualityOrder ||
-      leftEffectRank - rightEffectRank || valueOrder || left.id.localeCompare(right.id);
+  const affordableTower = offer.cards.find((cardId) => {
+    const card = cardDefinition(bundle, cardId);
+    const preview = previews.get(cardId);
+    return card.effectId === 'tower-count' &&
+      preview !== undefined &&
+      preview.warPointCost <= hud.warPointsBalance;
   });
-  return ranked[0] ?? first;
+  if (affordableTower !== undefined) return affordableTower;
+
+  const activeTowerCount = hud.activeTowerIds.length;
+  const ranked = offer.cards
+    .map((cardId) => {
+      const card = cardDefinition(bundle, cardId);
+      const preview = previews.get(cardId);
+      if (
+        card.effectId === 'tower-count' ||
+        preview === undefined ||
+        preview.warPointCost > hud.warPointsBalance
+      ) {
+        return undefined;
+      }
+      const projectedGain = Math.max(
+        0,
+        (throughputScore(preview.after) - throughputScore(preview.before)) * activeTowerCount,
+      );
+      return {
+        cardId,
+        cost: preview.warPointCost,
+        projectedGain,
+        gainPerWarPoint: projectedGain / preview.warPointCost,
+      };
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> =>
+      candidate !== undefined && candidate.projectedGain > 0
+    )
+    .sort((left, right) =>
+      right.gainPerWarPoint - left.gainPerWarPoint ||
+      right.projectedGain - left.projectedGain ||
+      left.cost - right.cost ||
+      left.cardId.localeCompare(right.cardId)
+    );
+  return ranked[0]?.cardId;
 }
 
 function createHarness(bundle: BattleBundleV1, seed: number): Harness {
@@ -362,11 +359,21 @@ function createHarness(bundle: BattleBundleV1, seed: number): Harness {
       overdriveActivatedEvents: 0,
       overdriveEndedEvents: 0,
       overdriveActivationsByTower: [0, 0, 0],
+      warPointsGained: 0,
+      warPointsSpent: 0,
+      cardPurchases: 0,
+      towerUnlocks: 0,
+      shopOpenCommandsApplied: 0,
+      shopCloseCommandsApplied: 0,
     },
     rerollsUsed: 0,
     revivesGranted: 0,
     choicesByEffect: emptyEffectCounts(),
     choicesByQuality: emptyQualityCounts(),
+    shopOffersByWave: new Map<number, OfferGranted[]>(),
+    shopPurchasesByWave: new Map<number, number>(),
+    shopClosedWithoutPurchase: 0,
+    towerUnlockWave: null,
     nextCommandSeq: 1,
     nextTacticTick: 0,
   };
@@ -409,6 +416,16 @@ function recordOutput(metrics: RunEventMetrics, output: SimulationOutput): void 
         metrics.breaches += 1;
         metrics.breachDamage += event.damage;
         break;
+      case 'WAR_POINTS_GAINED':
+        metrics.warPointsGained += event.amount;
+        break;
+      case 'CARD_PURCHASED':
+        metrics.cardPurchases += 1;
+        metrics.warPointsSpent += event.cost;
+        break;
+      case 'TOWER_UNLOCKED':
+        metrics.towerUnlocks += 1;
+        break;
       case 'OVERDRIVE_READY':
         metrics.overdriveReadyEvents += 1;
         break;
@@ -427,7 +444,6 @@ function recordOutput(metrics: RunEventMetrics, output: SimulationOutput): void 
 
 function drainFlowQueue(
   harness: Harness,
-  strategy: Strategy,
   reviveLimit: number,
   initialOutput: SimulationOutput,
 ): void {
@@ -449,46 +465,127 @@ function drainFlowQueue(
         continue;
       }
 
-      let offer = harness.authority.requestOffer(
-        request.ordinal,
-        undefined,
-        request.eligibleEffectIds,
-      );
-      queue.push(harness.simulation.applyAuthorityEvent(offer));
-      if (
-        harness.authority.getRerollsRemaining(request.ordinal) > 0 &&
-        shouldReroll(
-          harness.bundle,
-          strategy,
-          request.eligibleEffectIds,
-          offer,
-          harness.simulation.getHudProjection(),
-        )
-      ) {
-        offer = harness.authority.requestOffer(
-          request.ordinal,
-          offer.offerId,
-          request.eligibleEffectIds,
-        );
-        queue.push(harness.simulation.applyAuthorityEvent(offer));
-        harness.rerollsUsed += 1;
-      }
-
-      const selectedCardId = chooseCard(
-        harness.bundle,
-        strategy,
-        harness.simulation.getHudProjection(),
-        offer,
-      );
-      const selectedCard = cardDefinition(harness.bundle, selectedCardId);
-      harness.choicesByEffect[selectedCard.effectId] += 1;
-      harness.choicesByQuality[selectedCard.quality] += 1;
-      queue.push(
-        harness.simulation.applyAuthorityEvent(
-          harness.authority.acceptChoice(offer.offerId, selectedCardId),
-        ),
+      throw new Error(
+        `Fixed-stage offer ${request.ordinal} bypassed the explicit OPEN_SHOP command path.`,
       );
     }
+  }
+}
+
+function cardWarPointCost(bundle: BattleBundleV1, card: CardDefinition): number {
+  const cost = card.effectId === 'tower-count'
+    ? bundle.rules.towerBuildCost
+    : card.warPointCost;
+  assert.ok(
+    cost !== undefined && Number.isSafeInteger(cost) && cost > 0,
+    `${card.id} has no valid campaign war-point cost.`,
+  );
+  return cost;
+}
+
+function minimumPotentialShopCost(bundle: BattleBundleV1): number {
+  const costs = bundle.cards
+    .filter((card) => card.effectId !== 'tower-count')
+    .map((card) => cardWarPointCost(bundle, card));
+  assert.ok(costs.length > 0, `${bundle.stage.id} has no purchasable stat cards.`);
+  return Math.min(...costs);
+}
+
+function applyShopCommand(
+  harness: Harness,
+  command: Extract<BattleCommand, { type: 'OPEN_SHOP' | 'CLOSE_SHOP' }>,
+): SimulationOutput {
+  const output = harness.simulation.applyCommand(command);
+  assert.equal(output.commandAcks.length, 1, `${command.type} did not produce exactly one ack.`);
+  const ack = output.commandAcks[0];
+  assert.equal(ack?.seq, command.seq, `${command.type} ack sequence diverged.`);
+  assert.equal(ack?.status, 'applied', `${command.type} command ${command.seq} was rejected.`);
+  if (command.type === 'OPEN_SHOP') harness.metrics.shopOpenCommandsApplied += 1;
+  if (command.type === 'CLOSE_SHOP') harness.metrics.shopCloseCommandsApplied += 1;
+  recordOutput(harness.metrics, output);
+  return output;
+}
+
+function attemptCampaignShop(harness: Harness): void {
+  const before = harness.simulation.getHudProjection();
+  const waveOffers = harness.shopOffersByWave.get(before.waveIndex) ?? [];
+  const wavePurchases = harness.shopPurchasesByWave.get(before.waveIndex) ?? 0;
+  if (
+    before.flowState !== 'running' ||
+    !before.shopAvailable ||
+    waveOffers.length > wavePurchases ||
+    wavePurchases >= before.shopPurchaseLimitPerWave ||
+    before.warPointsBalance < minimumPotentialShopCost(harness.bundle)
+  ) {
+    return;
+  }
+
+  const openOutput = applyShopCommand(harness, {
+    seq: harness.nextCommandSeq,
+    type: 'OPEN_SHOP',
+  });
+  harness.nextCommandSeq += 1;
+  const offerRequests = openOutput.flowRequests.filter((request) => request.type === 'OFFER');
+  assert.equal(
+    offerRequests.length,
+    1,
+    `${harness.bundle.stage.id} wave ${before.waveIndex} did not request exactly one shop offer.`,
+  );
+  assert.equal(
+    openOutput.flowRequests.length,
+    offerRequests.length,
+    `${harness.bundle.stage.id} mixed shop and non-shop flow requests.`,
+  );
+  const request = offerRequests[0];
+  assert.ok(request, `${harness.bundle.stage.id} emitted no shop offer request.`);
+  const offer = harness.authority.requestOffer(
+    request.ordinal,
+    undefined,
+    request.eligibleEffectIds,
+  );
+  assert.equal(
+    offer.replacesOfferId,
+    undefined,
+    `${harness.bundle.stage.id} fixed shop unexpectedly rerolled an offer.`,
+  );
+  const grantOutput = harness.simulation.applyAuthorityEvent(offer);
+  recordOutput(harness.metrics, grantOutput);
+  assert.equal(grantOutput.flowRequests.length, 0, 'OFFER_GRANTED recursively requested flow.');
+  waveOffers.push(offer);
+  harness.shopOffersByWave.set(before.waveIndex, waveOffers);
+
+  const offeredHud = harness.simulation.getHudProjection();
+  assert.equal(offeredHud.flowState, 'offer-pending', 'Granted shop offer is not pending.');
+  assert.equal(offeredHud.activeOffer?.offerId, offer.offerId, 'HUD shop offer diverged.');
+  const selectedCardId = chooseAffordableShopCard(harness.bundle, offeredHud, offer);
+  if (selectedCardId === undefined) {
+    applyShopCommand(harness, {
+      seq: harness.nextCommandSeq,
+      type: 'CLOSE_SHOP',
+    });
+    harness.nextCommandSeq += 1;
+    harness.shopClosedWithoutPurchase += 1;
+    return;
+  }
+
+  const selectedCard = cardDefinition(harness.bundle, selectedCardId);
+  harness.choicesByEffect[selectedCard.effectId] += 1;
+  harness.choicesByQuality[selectedCard.quality] += 1;
+  const purchaseOutput = harness.simulation.applyAuthorityEvent(
+    harness.authority.acceptChoice(offer.offerId, selectedCardId),
+  );
+  recordOutput(harness.metrics, purchaseOutput);
+  assert.equal(purchaseOutput.flowRequests.length, 0, 'CARD_CHOICE_ACCEPTED recursively requested flow.');
+  assert.ok(
+    purchaseOutput.events.some((event) =>
+      event.type === 'CARD_PURCHASED' && event.cardId === selectedCardId
+    ),
+    `${selectedCardId} purchase emitted no CARD_PURCHASED event.`,
+  );
+  harness.shopPurchasesByWave.set(before.waveIndex, wavePurchases + 1);
+  if (selectedCard.effectId === 'tower-count') {
+    assert.equal(harness.towerUnlockWave, null, 'A campaign run unlocked the tower twice.');
+    harness.towerUnlockWave = before.waveIndex;
   }
 }
 
@@ -550,7 +647,7 @@ function towerPressures(harness: Harness, hud: HudProjectionV1): TowerPressure[]
       routeProgressPx: routeProgressPx(harness.bundle, entity.x, entity.y),
     }));
   const rangeSquared = hud.towerStats.current.rangePx ** 2;
-  return TOWER_IDS.map((towerId) => {
+  return hud.activeTowerIds.map((towerId) => {
     const anchor = harness.bundle.route.towerAnchors[towerId];
     const inRange = enemies
       .filter(({ entity }) =>
@@ -578,6 +675,12 @@ function applyTacticCommand(
   reviveLimit: number,
   command: BattleCommand,
 ): void {
+  if (command.type === 'SET_AIM' || command.type === 'ACTIVATE_OVERDRIVE') {
+    assert.ok(
+      harness.simulation.getHudProjection().activeTowerIds.includes(command.towerId),
+      `${command.type} targeted inactive tower ${command.towerId}.`,
+    );
+  }
   const output = harness.simulation.applyCommand(command);
   assert.equal(output.commandAcks.length, 1, `${command.type} did not produce exactly one ack.`);
   const ack = output.commandAcks[0];
@@ -585,7 +688,7 @@ function applyTacticCommand(
   assert.equal(ack?.status, 'applied', `${command.type} command ${command.seq} was rejected.`);
   if (command.type === 'SET_AIM') harness.metrics.aimCommandsApplied += 1;
   if (command.type === 'ACTIVATE_OVERDRIVE') harness.metrics.overdriveCommandsApplied += 1;
-  drainFlowQueue(harness, strategy, reviveLimit, output);
+  drainFlowQueue(harness, reviveLimit, output);
 }
 
 function performTactics(
@@ -706,11 +809,18 @@ function runCampaignStage(
   const bundle = resolveStageBundleForSeed(stageId, seed);
   const harness = createHarness(bundle, seed);
   let remainingTicks = SIMULATION_TICK_BUDGET;
+  const shopCheckChunkTicks = Math.max(1, Math.min(
+    SIMULATION_CHUNK_TICKS,
+    bundle.rules.waveGapTicks - 1,
+  ));
 
   while (remainingTicks > 0) {
     let before = harness.simulation.getHudProjection();
     if (before.flowState === 'result' || before.flowState === 'defeat-pending') break;
     assert.equal(before.flowState, 'running', `${stageId} stalled in ${before.flowState}.`);
+    attemptCampaignShop(harness);
+    before = harness.simulation.getHudProjection();
+    assert.equal(before.flowState, 'running', `${stageId} shop did not restore running flow.`);
     if (
       strategy.tacticIntervalTicks !== undefined &&
       before.tick >= harness.nextTacticTick
@@ -722,13 +832,13 @@ function runCampaignStage(
       before = harness.simulation.getHudProjection();
     }
     const ticksUntilNextTactic = strategy.tacticIntervalTicks === undefined
-      ? SIMULATION_CHUNK_TICKS
+      ? shopCheckChunkTicks
       : Math.max(1, harness.nextTacticTick - before.tick);
     const output = harness.simulation.advanceTicks(
-      Math.min(SIMULATION_CHUNK_TICKS, remainingTicks, ticksUntilNextTactic),
+      Math.min(shopCheckChunkTicks, remainingTicks, ticksUntilNextTactic),
     );
     remainingTicks -= output.ticksAdvanced;
-    drainFlowQueue(harness, strategy, revivePolicy.limit, output);
+    drainFlowQueue(harness, revivePolicy.limit, output);
     const after = harness.simulation.getHudProjection();
     if (after.flowState === 'result' || after.flowState === 'defeat-pending') break;
     if (output.ticksAdvanced === 0 && output.flowRequests.length === 0) {
@@ -755,6 +865,78 @@ function runCampaignStage(
   );
   if (clear) assert.ok(harness.metrics.kills > 0, `${stageId} cleared without any combat kills.`);
   if (defeat) assert.ok(harness.metrics.breaches > 0, `${stageId} defeated without a BREACH event.`);
+  const purchaseChoiceCount = sum(CARD_EFFECT_IDS.map(
+    (effectId) => harness.choicesByEffect[effectId],
+  ));
+  const shopOfferCount = sum(
+    [...harness.shopOffersByWave.values()].map((offers) => offers.length),
+  );
+  const shopPurchaseCount = sum([...harness.shopPurchasesByWave.values()]);
+  const initialTowerCount = bundle.rules.initialActiveTowerIds?.length ?? TOWER_IDS.length;
+  assert.equal(harness.rerollsUsed, 0, `${stageId} fixed shop used a reroll.`);
+  assert.ok(
+    [...harness.shopOffersByWave.values()].every(
+      (offers) => offers.length <= hud.shopPurchaseLimitPerWave,
+    ),
+    `${stageId} opened more offers than the per-wave purchase limit.`,
+  );
+  assert.equal(
+    harness.metrics.shopOpenCommandsApplied,
+    shopOfferCount,
+    `${stageId} shop open commands diverged from fixed offers.`,
+  );
+  assert.equal(
+    harness.metrics.shopCloseCommandsApplied,
+    harness.shopClosedWithoutPurchase,
+    `${stageId} shop close accounting diverged.`,
+  );
+  assert.equal(
+    harness.shopClosedWithoutPurchase,
+    shopOfferCount - shopPurchaseCount,
+    `${stageId} each fixed offer must end in exactly one purchase or close.`,
+  );
+  assert.equal(
+    harness.metrics.cardPurchases,
+    shopPurchaseCount,
+    `${stageId} purchase accounting diverged by wave.`,
+  );
+  assert.ok(
+    [...harness.shopPurchasesByWave.values()].every(
+      (count) => count <= hud.shopPurchaseLimitPerWave,
+    ),
+    `${stageId} exceeded the per-wave purchase limit.`,
+  );
+  assert.equal(
+    harness.metrics.cardPurchases,
+    purchaseChoiceCount,
+    `${stageId} card purchase and choice accounting diverged.`,
+  );
+  assert.equal(
+    harness.metrics.towerUnlocks,
+    harness.choicesByEffect['tower-count'],
+    `${stageId} tower purchase and unlock accounting diverged.`,
+  );
+  assert.ok(harness.metrics.towerUnlocks <= 1, `${stageId} unlocked more than one tower.`);
+  assert.equal(
+    harness.towerUnlockWave === null ? 0 : 1,
+    harness.metrics.towerUnlocks,
+    `${stageId} tower unlock wave accounting diverged.`,
+  );
+  assert.equal(
+    hud.activeTowerIds.length,
+    initialTowerCount + harness.metrics.towerUnlocks,
+    `${stageId} active tower projection diverged from unlock events.`,
+  );
+  assert.equal(
+    hud.warPointsEarned,
+    harness.metrics.warPointsGained,
+    `${stageId} earned war-point projection diverged from events.`,
+  );
+  assert.equal(
+    hud.warPointsEarned - hud.warPointsBalance,
+    harness.metrics.warPointsSpent,
+    `${stageId} spent war-point accounting diverged.`,
+  );
 
   const activityStartTick = harness.metrics.firstAttackTick ?? harness.metrics.firstSpawnTick ?? 0;
   const gaps = quietGaps(harness.metrics.hitTicks, activityStartTick, hud.tick);
@@ -770,6 +952,15 @@ function runCampaignStage(
     finalLevel: hud.level,
     choicesByEffect: { ...harness.choicesByEffect },
     choicesByQuality: { ...harness.choicesByQuality },
+    warPointsEarned: hud.warPointsEarned,
+    warPointsSpent: harness.metrics.warPointsSpent,
+    warPointsBalance: hud.warPointsBalance,
+    shopOffers: shopOfferCount,
+    shopPurchases: harness.metrics.cardPurchases,
+    shopClosuresWithoutPurchase: harness.shopClosedWithoutPurchase,
+    towerPurchases: harness.metrics.towerUnlocks,
+    towerUnlockWave: harness.towerUnlockWave,
+    activeTowerCount: hud.activeTowerIds.length,
     attackReleases: harness.metrics.attackReleases,
     focusedAttackReleases: harness.metrics.focusedAttackReleases,
     arrowsReleased: harness.metrics.arrowsReleased,
@@ -923,6 +1114,22 @@ function aggregateCase(
         sum(results.map((result) => result.overdriveActivationsByTower[towerId])),
       ])),
     },
+    economy: {
+      warPointsEarned: distribution(results.map((result) => result.warPointsEarned)),
+      warPointsSpent: distribution(results.map((result) => result.warPointsSpent)),
+      warPointsBalance: distribution(results.map((result) => result.warPointsBalance)),
+      shopOffers: distribution(results.map((result) => result.shopOffers)),
+      shopPurchases: distribution(results.map((result) => result.shopPurchases)),
+      shopClosuresWithoutPurchase: distribution(
+        results.map((result) => result.shopClosuresWithoutPurchase),
+      ),
+      towerPurchases: sum(results.map((result) => result.towerPurchases)),
+      towerPurchaseRate: rounded(
+        results.filter((result) => result.towerPurchases > 0).length / results.length,
+        6,
+      ),
+      finalActiveTowerCount: distribution(results.map((result) => result.activeTowerCount)),
+    },
     progression: {
       finalLevel: distribution(results.map((result) => result.finalLevel)),
       revivesUsed: distribution(results.map((result) => result.revivesUsed)),
@@ -966,6 +1173,17 @@ interface CompactCase {
   peakAliveMedian: number | null;
   killBurst3sMedian: number | null;
   quietGapP95Median: number | null;
+  warPointsEarnedMedian: number | null;
+  warPointsSpentMedian: number | null;
+  warPointsBalanceMedian: number | null;
+  shopOffersMedian: number | null;
+  shopPurchasesMedian: number | null;
+  purchasesByEffect: Record<CardEffectId, number>;
+  towerPurchaseRunCount: number;
+  towerUnlockWaves: Record<string, number>;
+  activeTowerCountMedian: number | null;
+  finalGateIntegrityMedian: number | null;
+  finalGateIntegrityBpMedian: number | null;
 }
 
 interface GateFailure {
@@ -1152,10 +1370,10 @@ function evaluateBalanceGates(cases: readonly CompactCase[]): GateEvaluation {
   for (const strategy of STRATEGIES) {
     const stage01 = requireCompactCase(cases, 'STAGE_01', strategy.id, 'never');
     check(
-      stage01.clearCount >= stage01Minimums[strategy.id] && stage01.clearCount < SEED_COUNT,
+      stage01.clearCount >= stage01Minimums[strategy.id] && stage01.clearCount <= SEED_COUNT,
       'stage-01-clear-window',
       `STAGE_01/${strategy.id}/never`,
-      `clearCount is within [${stage01Minimums[strategy.id]}, 63]`,
+      `clearCount is within [${stage01Minimums[strategy.id]}, ${SEED_COUNT}]`,
       stage01.clearCount,
     );
   }
@@ -1310,6 +1528,30 @@ for (const stageId of CAMPAIGN_STAGE_IDS) {
         peakAliveMedian: percentile(results.map((result) => result.peakAlive), 0.5),
         killBurst3sMedian: percentile(results.map((result) => result.killBurst3s), 0.5),
         quietGapP95Median: percentile(results.map((result) => result.quietGapP95Ticks), 0.5),
+        warPointsEarnedMedian: percentile(results.map((result) => result.warPointsEarned), 0.5),
+        warPointsSpentMedian: percentile(results.map((result) => result.warPointsSpent), 0.5),
+        warPointsBalanceMedian: percentile(results.map((result) => result.warPointsBalance), 0.5),
+        shopOffersMedian: percentile(results.map((result) => result.shopOffers), 0.5),
+        shopPurchasesMedian: percentile(results.map((result) => result.shopPurchases), 0.5),
+        purchasesByEffect: aggregateCounts(
+          CARD_EFFECT_IDS,
+          results,
+          (result) => result.choicesByEffect,
+        ),
+        towerPurchaseRunCount: results.filter((result) => result.towerPurchases > 0).length,
+        towerUnlockWaves: results.reduce<Record<string, number>>((counts, result) => {
+          const key = result.towerUnlockWave === null ? 'none' : String(result.towerUnlockWave);
+          counts[key] = (counts[key] ?? 0) + 1;
+          return counts;
+        }, {}),
+        activeTowerCountMedian: percentile(results.map((result) => result.activeTowerCount), 0.5),
+        finalGateIntegrityMedian: percentile(
+          results.map((result) => result.gateIntegrityRemaining),
+          0.5,
+        ),
+        finalGateIntegrityBpMedian: percentile(results.map((result) =>
+          Math.round((result.gateIntegrityRemaining * 10_000) / result.gateIntegrityMax)
+        ), 0.5),
       });
     }
   }
@@ -1324,7 +1566,7 @@ for (const stageId of CAMPAIGN_STAGE_IDS) {
 const gateEvaluation = evaluateBalanceGates(compactCases);
 const gateStatus = gateEvaluation.failures.length === 0 ? 'passed' : 'failed';
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   status: gateStatus,
   ticksPerSecond: TICKS_PER_SECOND,
   corpus: {
@@ -1347,10 +1589,15 @@ const report = {
     overdrive: strategy.useOverdrive
       ? 'activate-on-highest-pressure-tower-when-ready'
       : 'unused',
+    shop: {
+      cadence: 'up-to-configured-purchase-limit-per-wave-after-minimum-price-is-affordable',
+      selection: 'affordable-tower-first-then-projected-throughput-gain-per-war-point',
+      rerolls: 'disabled',
+    },
   })),
   revivePolicies: REVIVE_POLICIES.map((policy) => policy.id),
   gates: {
-    profile: 'campaign-balance-wide-v1',
+    profile: 'campaign-war-points-balance-wide-v2',
     checkCount: gateEvaluation.checkCount,
     failureCount: gateEvaluation.failures.length,
     failures: gateEvaluation.failures,

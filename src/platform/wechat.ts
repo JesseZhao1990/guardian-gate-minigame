@@ -27,6 +27,7 @@ export interface RuntimeRect {
 export interface MiniGameRuntime {
   canvas: any;
   context: any;
+  createCanvas?(): any;
   resize(): RuntimeSize;
   size(): RuntimeSize;
   requestFrame(callback: (time: number) => void): number;
@@ -256,6 +257,7 @@ export function createMiniGameRuntime(): MiniGameRuntime {
   return {
     canvas,
     context,
+    createCanvas: () => wx.createCanvas(),
     resize,
     size: () => currentSize,
     requestFrame: request,
