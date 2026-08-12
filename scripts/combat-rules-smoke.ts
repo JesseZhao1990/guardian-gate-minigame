@@ -2,7 +2,10 @@ import { createBattleSimulation, type SimulationOutput } from '../src/core/battl
 import { createStage01Bundle } from '../src/core/content';
 import type { BattleEvent } from '../src/core/contracts';
 import { MiniGameAudio, type MiniGameRuntime } from '../src/platform/wechat';
-import { CanvasRenderer, projectBattleWorldPoint } from '../src/render/CanvasRenderer';
+import {
+  CanvasRenderer,
+  projectBattleWorldPoint,
+} from '../src/render/CanvasRenderer';
 
 interface Assertions {
   equal(actual: unknown, expected: unknown, message?: string): void;
@@ -267,6 +270,279 @@ const rendererRuntime: MiniGameRuntime = {
   requestFrame: () => 1,
   cancelFrame: () => undefined,
 };
+
+const battleBackgroundImage = {};
+interface BackgroundDrawRecord {
+  alpha: number;
+  matrix: readonly [number, number, number, number, number, number];
+  args: readonly number[];
+}
+const battleBackgroundDraws: BackgroundDrawRecord[] = [];
+// drawBattleBackground normally runs after beginFrame installs the wide-screen
+// viewport translation (240 design pixels on this 2400x1080 probe).
+let battleBackgroundMatrix: [number, number, number, number, number, number] = [1, 0, 0, 1, 240, 0];
+const battleBackgroundMatrixStack: [number, number, number, number, number, number][] = [];
+let battleBackgroundAlpha = 1;
+let battleBackgroundGradientCount = 0;
+let battleBackgroundOffscreenCanvasCount = 0;
+const battleBackgroundGradient = { addColorStop(): void {} };
+const battleBackgroundContext = new Proxy<Record<string, unknown>>({}, {
+  get(_target, property): unknown {
+    if (property === 'globalAlpha') return battleBackgroundAlpha;
+    if (property === 'drawImage') {
+      return (image: unknown, ...args: number[]) => {
+        if (image === battleBackgroundImage) {
+          battleBackgroundDraws.push({
+            alpha: battleBackgroundAlpha,
+            matrix: [...battleBackgroundMatrix],
+            args,
+          });
+        }
+      };
+    }
+    if (property === 'save') return () => { battleBackgroundMatrixStack.push([...battleBackgroundMatrix]); };
+    if (property === 'restore') {
+      return () => {
+        const restored = battleBackgroundMatrixStack.pop();
+        if (restored) battleBackgroundMatrix = restored;
+      };
+    }
+    if (property === 'translate') {
+      return (x: number, y: number) => {
+        const [a, b, c, d, e, f] = battleBackgroundMatrix;
+        battleBackgroundMatrix = [a, b, c, d, e + a * x + c * y, f + b * x + d * y];
+      };
+    }
+    if (property === 'scale') {
+      return (x: number, y: number) => {
+        const [a, b, c, d, e, f] = battleBackgroundMatrix;
+        battleBackgroundMatrix = [a * x, b * x, c * y, d * y, e, f];
+      };
+    }
+    if (property === 'createLinearGradient') {
+      return () => {
+        battleBackgroundGradientCount += 1;
+        return battleBackgroundGradient;
+      };
+    }
+    if (property === 'createRadialGradient') return () => battleBackgroundGradient;
+    if (property === 'measureText') return (text: string) => ({ width: text.length * 10 });
+    return () => undefined;
+  },
+  set(_target, property, value): boolean {
+    if (property === 'globalAlpha' && typeof value === 'number') battleBackgroundAlpha = value;
+    return true;
+  },
+});
+const backgroundSize = {
+  width: 2_400,
+  height: 1_080,
+  pixelRatio: 1,
+  safeArea: { left: 0, top: 0, right: 2_400, bottom: 1_080, width: 2_400, height: 1_080 },
+};
+const battleBackgroundBundle = createStage01Bundle();
+const battleBackgroundRenderer = new CanvasRenderer({
+  canvas: { createImage: () => ({}) },
+  context: battleBackgroundContext,
+  createCanvas: () => {
+    battleBackgroundOffscreenCanvasCount += 1;
+    return {
+      width: 1,
+      height: 1,
+      getContext: () => ({ imageSmoothingEnabled: true, drawImage(): void {} }),
+    };
+  },
+  resize: () => backgroundSize,
+  size: () => backgroundSize,
+  requestFrame: () => 1,
+  cancelFrame: () => undefined,
+}, battleBackgroundBundle);
+(battleBackgroundRenderer as unknown as {
+  images: { get(id: string): unknown };
+}).images = {
+  get: (id: string) => id === battleBackgroundBundle.stage.backgroundAssetId
+    ? battleBackgroundImage
+    : undefined,
+};
+(battleBackgroundRenderer as unknown as {
+  drawBattleBackground(cameraOffset: { x: number; y: number }): void;
+}).drawBattleBackground({ x: 0, y: 0 });
+assert.ok(
+  battleBackgroundDraws.length > 1,
+  'The wide battle background must draw full-resolution reflected extensions.',
+);
+assert.ok(
+  battleBackgroundDraws.every((draw) => draw.alpha === 1),
+  'Battle background extensions must not be dimmed relative to the main background.',
+);
+function transformedDrawBounds(draw: BackgroundDrawRecord): {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+} {
+  const [a, b, c, d, e, f] = draw.matrix;
+  const destination = draw.args.length === 8
+    ? draw.args.slice(4)
+    : draw.args.length === 4
+      ? draw.args
+      : [0, 0, 0, 0];
+  const [x = 0, y = 0, width = 0, height = 0] = destination;
+  const corners = [
+    [x, y],
+    [x + width, y],
+    [x, y + height],
+    [x + width, y + height],
+  ].map(([cornerX, cornerY]) => ({
+    x: a * cornerX + c * cornerY + e,
+    y: b * cornerX + d * cornerY + f,
+  }));
+  return {
+    left: Math.min(...corners.map((corner) => corner.x)),
+    top: Math.min(...corners.map((corner) => corner.y)),
+    right: Math.max(...corners.map((corner) => corner.x)),
+    bottom: Math.max(...corners.map((corner) => corner.y)),
+  };
+}
+const battleBackgroundBounds = battleBackgroundDraws.map(transformedDrawBounds);
+const backgroundBoundsKeys = new Set(battleBackgroundBounds.map((bounds) =>
+  [bounds.left, bounds.top, bounds.right, bounds.bottom].map(Math.round).join(',')));
+for (const expectedBounds of [
+  '0,0,480,45',
+  '0,45,480,855',
+  '0,855,480,1080',
+  '480,0,1920,45',
+  '480,45,1920,855',
+  '480,855,1920,1080',
+  '1920,0,2400,45',
+  '1920,45,2400,855',
+  '1920,855,2400,1080',
+]) {
+  assert.ok(
+    backgroundBoundsKeys.has(expectedBounds),
+    `The battle background must cover wide-screen region ${expectedBounds}.`,
+  );
+}
+assert.equal(battleBackgroundMatrixStack.length, 0, 'Battle background save/restore must balance.');
+assert.equal(
+  battleBackgroundOffscreenCanvasCount,
+  0,
+  'Battle background must not create a low-resolution ambient enlargement.',
+);
+assert.equal(
+  battleBackgroundGradientCount,
+  0,
+  'Battle background must not paint a dark edge gradient around the projected world.',
+);
+
+renderedTexts.length = 0;
+const shopRenderSimulation = createBattleSimulation(createStage01Bundle(), 0x5a0f00d);
+const shopRenderBundle = createStage01Bundle();
+const shopRenderCards: [string, string, string] = [
+  'CARD_BASIC_CRITICAL_MASTERY_B',
+  'CARD_BASIC_ARROW_COUNT_P',
+  'CARD_BASIC_PENETRATION_B',
+];
+const shopRenderHud = {
+  ...shopRenderSimulation.getHudProjection(),
+  flowState: 'offer-pending' as const,
+  mode: 'fixed' as const,
+  warPointsBalance: 63,
+  activeOffer: {
+    type: 'OFFER_GRANTED' as const,
+    authoritySeq: 1,
+    authorizationId: 'combat-rules-shop-render',
+    offerId: 'combat-rules-shop-render-offer',
+    cards: shopRenderCards,
+  },
+  offerPreviews: [
+    {
+      cardId: shopRenderCards[0],
+      before: {
+        ...shopRenderSimulation.getHudProjection().towerStats.current,
+        critChanceBp: 500,
+        critDamageBp: 15_000,
+      },
+      after: {
+        ...shopRenderSimulation.getHudProjection().towerStats.current,
+        critChanceBp: 1_160,
+        critDamageBp: 16_980,
+      },
+      capped: false,
+      warPointCost: 24,
+    },
+    {
+      cardId: shopRenderCards[1],
+      before: shopRenderSimulation.getHudProjection().towerStats.current,
+      after: { ...shopRenderSimulation.getHudProjection().towerStats.current, arrowCount: 3 },
+      capped: false,
+      warPointCost: 140,
+    },
+    {
+      cardId: shopRenderCards[2],
+      before: shopRenderSimulation.getHudProjection().towerStats.current,
+      after: { ...shopRenderSimulation.getHudProjection().towerStats.current, penetrationCount: 1 },
+      capped: false,
+      warPointCost: 90,
+    },
+  ],
+};
+const compactShopSize = {
+  width: 800,
+  height: 360,
+  pixelRatio: 3,
+  safeArea: { left: 0, top: 0, right: 800, bottom: 360, width: 800, height: 360 },
+};
+const compactShopRuntime: MiniGameRuntime = {
+  canvas: { createImage: () => ({}) },
+  context: drawingContext,
+  resize: () => compactShopSize,
+  size: () => compactShopSize,
+  requestFrame: () => 1,
+  cancelFrame: () => undefined,
+};
+const shopRenderRenderer = new CanvasRenderer(compactShopRuntime, shopRenderBundle);
+shopRenderRenderer.drawBattle({
+  snapshot: shopRenderSimulation.getRenderSnapshot(),
+  hud: shopRenderHud,
+  muted: false,
+  selectedTowerId: 0,
+  victory: false,
+});
+assert.ok(
+  renderedTexts.some((text) => text.includes('战功商店 · 可用 63')),
+  'The fixed shop overlay must expose the current war-point balance.',
+);
+assert.ok(
+  !renderedTexts.includes(shopRenderBundle.stage.name),
+  'The shop overlay must not paint the underlying HUD stage title through its heading.',
+);
+for (const expectedText of [
+  '会心术',
+  '箭矢数量',
+  '穿透次数',
+  '暴击率',
+  '暴击伤害',
+  '每轮箭矢',
+  '额外穿透',
+  '5%',
+  '11.6%',
+  '150%',
+  '169.8%',
+  '1 支',
+  '3 支',
+  '0 次',
+  '1 次',
+  '选择',
+  '还差 77 战功',
+  '还差 27 战功',
+]) {
+  assert.ok(
+    renderedTexts.includes(expectedText),
+    `The compact shop card body must render ${expectedText}.`,
+  );
+}
+
 const breachRenderer = new CanvasRenderer(rendererRuntime, gateBundle);
 const projectedThirdTower = projectBattleWorldPoint(gateBundle.route.towerAnchors[2]);
 assert.equal(

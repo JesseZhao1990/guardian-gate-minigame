@@ -732,6 +732,79 @@ export interface CardOverlayLayout {
   starts: [number, number, number];
 }
 
+export interface CardOverlayTypography {
+  eyebrow: number;
+  heading: number;
+  subtitle: number;
+  meta: number;
+  title: number;
+  label: number;
+  value: number;
+  masteryValue: number;
+  delta: number;
+  action: number;
+}
+
+export interface CardOverlayContentLayout {
+  typography: CardOverlayTypography;
+  metaTop: number;
+  metaHeight: number;
+  metaSideInset: number;
+  costPillWidth: number;
+  qualityPillWidth: number;
+  iconTop: number;
+  iconSize: number;
+  titleBaseline: number;
+  dividerY: number;
+  metricTop: number;
+  metricHeight: number;
+  metricHeaderBaseline: number;
+  singleMetricBaseline: number;
+  masteryMetricBaselines: readonly [number, number];
+  deltaBaseline: number;
+  actionTop: number;
+  actionHeight: number;
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+export function resolveCardOverlayContentLayout(scale: number): CardOverlayContentLayout {
+  const safeScale = Math.max(.01, scale);
+  return {
+    typography: {
+      eyebrow: clamp(10 / safeScale, 24, 28),
+      heading: clamp(15 / safeScale, 42, 48),
+      subtitle: clamp(8 / safeScale, 20, 24),
+      meta: clamp(8 / safeScale, 18, 22),
+      title: clamp(12 / safeScale, 34, 40),
+      label: clamp(7 / safeScale, 15, 20),
+      value: clamp(10 / safeScale, 28, 34),
+      masteryValue: clamp(8 / safeScale, 20, 24),
+      delta: clamp(7 / safeScale, 16, 20),
+      action: clamp(9 / safeScale, 20, 28),
+    },
+    metaTop: 18,
+    metaHeight: 40,
+    metaSideInset: 24,
+    costPillWidth: 132,
+    qualityPillWidth: 88,
+    iconTop: 76,
+    iconSize: 94,
+    titleBaseline: 222,
+    dividerY: 241,
+    metricTop: 254,
+    metricHeight: 168,
+    metricHeaderBaseline: 280,
+    singleMetricBaseline: 334,
+    masteryMetricBaselines: [318, 356],
+    deltaBaseline: 400,
+    actionTop: 478,
+    actionHeight: 68,
+  };
+}
+
 export function resolveViewportLayout(width: number, height: number): ViewportLayout {
   const safeWidth = Math.max(1, width);
   const safeHeight = Math.max(1, height);
@@ -816,8 +889,6 @@ export const BATTLE_BOTTOM_HUD_TOP = 918;
 export const BATTLE_BOTTOM_HUD_LEFT_RIGHT = 600;
 export const BATTLE_BOTTOM_HUD_RIGHT_LEFT = 1_510;
 export const BREACH_SEAL_VISUAL_RADIUS = 126;
-const BACKGROUND_AMBIENT_WIDTH = 160;
-const BACKGROUND_AMBIENT_HEIGHT = 90;
 
 export function projectBattleWorldPoint(point: DesignPoint): DesignPoint {
   return {
@@ -1088,108 +1159,132 @@ function fallbackCardPreview(
   };
 }
 
-interface CardPreviewCopy {
-  beforeAfter: string;
-  actualDelta: string;
-  unchanged: boolean;
+interface CardMetricRow {
+  label: string;
+  before: string;
+  after: string;
 }
 
-function cardPreviewCopy(card: CardDefinition, preview: TowerCardPreviewLike): CardPreviewCopy {
+interface CardMetricPresentation {
+  rows: readonly CardMetricRow[];
+  delta: string;
+}
+
+function cardPreviewIsUnchanged(card: CardDefinition, preview: TowerCardPreviewLike): boolean {
   const { before, after } = preview;
+  switch (card.effectId) {
+    case 'tower-damage': return after.damagePerArrowMilli === before.damagePerArrowMilli;
+    case 'tower-frequency': return after.attackRateMilliPerSecond === before.attackRateMilliPerSecond;
+    case 'arrow-count': return after.arrowCount === before.arrowCount;
+    case 'penetration': return after.penetrationCount === before.penetrationCount;
+    case 'crit-rate': return after.critChanceBp === before.critChanceBp;
+    case 'crit-damage': return after.critDamageBp === before.critDamageBp;
+    case 'critical-mastery': return after.critChanceBp === before.critChanceBp &&
+      after.critDamageBp === before.critDamageBp;
+    case 'tower-count': {
+      const beforeCount = preview.towerCountBefore ?? 2;
+      const afterCount = preview.towerCountAfter ?? Math.min(3, beforeCount + 1);
+      return afterCount === beforeCount;
+    }
+  }
+}
+
+function cardMetricPresentation(
+  card: CardDefinition,
+  preview: TowerCardPreviewLike,
+): CardMetricPresentation {
+  const { before, after } = preview;
+  const capPrefix = preview.capped ? '部分生效 · ' : '';
+  const unchangedDelta = preview.capped ? '已达上限' : '本次强化后面板暂不变';
   switch (card.effectId) {
     case 'tower-damage': {
       const delta = after.damagePerArrowMilli - before.damagePerArrowMilli;
       return {
-        beforeAfter: `${preciseDamage(before.damagePerArrowMilli)} → ${preciseDamage(after.damagePerArrowMilli)}`,
-        actualDelta: `实际 ${signed(delta, preciseDamage)} 单箭`,
-        unchanged: delta === 0,
+        rows: [{
+          label: '单箭伤害',
+          before: preciseDamage(before.damagePerArrowMilli),
+          after: preciseDamage(after.damagePerArrowMilli),
+        }],
+        delta: delta === 0 ? unchangedDelta : `${capPrefix}实增 ${signed(delta, preciseDamage)} 单箭`,
       };
     }
     case 'tower-frequency': {
       const delta = after.attackRateMilliPerSecond - before.attackRateMilliPerSecond;
       return {
-        beforeAfter: `${formatRate(before.attackRateMilliPerSecond)} → ${formatRate(after.attackRateMilliPerSecond)}/秒`,
-        actualDelta: `实际 ${signed(delta, (value) => `${formatRate(value)}/秒`)}`,
-        unchanged: delta === 0,
+        rows: [{
+          label: '每秒攻击',
+          before: formatRate(before.attackRateMilliPerSecond),
+          after: formatRate(after.attackRateMilliPerSecond),
+        }],
+        delta: delta === 0
+          ? preview.capped
+            ? '已达上限'
+            : '攻速按帧取整 · 面板暂不变'
+          : `${capPrefix}实增 ${signed(delta, formatRate)} 次/秒`,
       };
     }
     case 'arrow-count': {
       const delta = after.arrowCount - before.arrowCount;
       return {
-        beforeAfter: `${before.arrowCount} → ${after.arrowCount} 支/轮`,
-        actualDelta: `实际 ${signed(delta, (value) => `${value} 支`)}`,
-        unchanged: delta === 0,
+        rows: [{ label: '每轮箭矢', before: `${before.arrowCount} 支`, after: `${after.arrowCount} 支` }],
+        delta: delta === 0 ? unchangedDelta : `${capPrefix}实增 ${signed(delta, String)} 支/轮`,
       };
     }
     case 'penetration': {
       const delta = after.penetrationCount - before.penetrationCount;
       return {
-        beforeAfter: `${before.penetrationCount} → ${after.penetrationCount} 个目标`,
-        actualDelta: `实际 ${signed(delta, (value) => `${value} 个`)}`,
-        unchanged: delta === 0,
+        rows: [{
+          label: '额外穿透',
+          before: `${before.penetrationCount} 次`,
+          after: `${after.penetrationCount} 次`,
+        }],
+        delta: delta === 0 ? unchangedDelta : `${capPrefix}实增 ${signed(delta, String)} 次穿透`,
       };
     }
     case 'crit-rate': {
       const delta = after.critChanceBp - before.critChanceBp;
       return {
-        beforeAfter: `${formatBp(before.critChanceBp)} → ${formatBp(after.critChanceBp)}`,
-        actualDelta: `实际 ${signed(delta, (value) => `${(value / 100).toFixed(1).replace(/\.0$/, '')}`)} 个百分点`,
-        unchanged: delta === 0,
+        rows: [{ label: '暴击率', before: formatBp(before.critChanceBp), after: formatBp(after.critChanceBp) }],
+        delta: delta === 0 ? unchangedDelta : `${capPrefix}实增 ${signed(delta, (value) => `${value / 100}pp`)}`,
       };
     }
     case 'crit-damage': {
       const delta = after.critDamageBp - before.critDamageBp;
       return {
-        beforeAfter: `${formatBp(before.critDamageBp)} → ${formatBp(after.critDamageBp)}`,
-        actualDelta: `实际 ${signed(delta, (value) => `${(value / 100).toFixed(1).replace(/\.0$/, '')}`)} 个百分点`,
-        unchanged: delta === 0,
+        rows: [{
+          label: '暴击伤害',
+          before: formatBp(before.critDamageBp),
+          after: formatBp(after.critDamageBp),
+        }],
+        delta: delta === 0 ? unchangedDelta : `${capPrefix}实增 ${signed(delta, (value) => `${value / 100}pp`)}`,
       };
     }
     case 'critical-mastery': {
       const critRateDelta = after.critChanceBp - before.critChanceBp;
       const critDamageDelta = after.critDamageBp - before.critDamageBp;
+      const formatPointDelta = (value: number): string => value === 0
+        ? '0pp'
+        : signed(value, (candidate) => `${candidate / 100}pp`);
       return {
-        beforeAfter: `${formatBp(before.critChanceBp)}→${formatBp(after.critChanceBp)} / ${formatBp(before.critDamageBp)}→${formatBp(after.critDamageBp)}`,
-        actualDelta: `暴击 ${signed(critRateDelta, (value) => `${value / 100}pp`)} · 暴伤 ${signed(critDamageDelta, (value) => `${value / 100}pp`)}`,
-        unchanged: critRateDelta === 0 && critDamageDelta === 0,
+        rows: [
+          { label: '暴击率', before: formatBp(before.critChanceBp), after: formatBp(after.critChanceBp) },
+          { label: '暴击伤害', before: formatBp(before.critDamageBp), after: formatBp(after.critDamageBp) },
+        ],
+        delta: critRateDelta === 0 && critDamageDelta === 0
+          ? unchangedDelta
+          : `${capPrefix}实增 暴击 ${formatPointDelta(critRateDelta)} · 暴伤 ${formatPointDelta(critDamageDelta)}`,
       };
     }
     case 'tower-count': {
       const beforeCount = preview.towerCountBefore ?? 2;
       const afterCount = preview.towerCountAfter ?? Math.min(3, beforeCount + 1);
+      const delta = afterCount - beforeCount;
       return {
-        beforeAfter: `${beforeCount} → ${afterCount} 座`,
-        actualDelta: afterCount > beforeCount ? `增援 ${afterCount - beforeCount} 座箭塔` : '塔位已全部部署',
-        unchanged: afterCount === beforeCount,
+        rows: [{ label: '已部署塔', before: `${beforeCount} 座`, after: `${afterCount} 座` }],
+        delta: delta === 0 ? '塔位已全部部署' : `增援 ${signed(delta, String)} 座 · 继承全部法门`,
       };
     }
   }
-}
-
-function cardDescription(card: CardDefinition): string {
-  switch (card.effectId) {
-    case 'tower-damage': return '当前及后续箭塔伤害同步提升';
-    case 'tower-frequency': return '当前及后续箭塔攻速同步提升';
-    case 'arrow-count': return '当前及后续箭塔每轮增加箭矢';
-    case 'penetration': return '当前及后续箭矢可额外穿透';
-    case 'crit-rate': return '当前及后续箭塔暴击概率提升';
-    case 'crit-damage': return '当前及后续箭塔暴击伤害提升';
-    case 'critical-mastery': return '同时提升暴击概率与暴击伤害';
-    case 'tower-count': return '解锁待命塔位，并继承本局全部法门';
-  }
-}
-
-function cardAmount(card: CardDefinition): string {
-  if (card.valueInt !== undefined) {
-    if (card.effectId === 'arrow-count') return `+${card.valueInt} 支/轮`;
-    if (card.effectId === 'penetration') return `+${card.valueInt} 穿透`;
-    if (card.effectId === 'tower-count') return `+${card.valueInt} 座塔`;
-    return `+${card.valueInt}`;
-  }
-  if (card.effectId === 'critical-mastery') {
-    return `暴击 +${(card.valueBp ?? 0) / 100}% · 暴伤 +${(card.secondaryValueBp ?? 0) / 100}%`;
-  }
-  return card.valueBp !== undefined ? `+${card.valueBp / 100}%` : '强化';
 }
 
 export class CanvasRenderer {
@@ -1197,7 +1292,6 @@ export class CanvasRenderer {
   private readonly context: any;
   private bundle: BattleBundleV1;
   private readonly images: ImageCatalog;
-  private readonly ambientBackgrounds = new Map<string, any>();
   private mainAssetsLoad?: Promise<void>;
   private readonly stageAssetLoads = new Map<BattleStageId, Promise<void>>();
   private cardsById: Map<string, CardDefinition>;
@@ -2275,7 +2369,10 @@ export class CanvasRenderer {
     this.drawFloatingDamageTexts();
     this.drawCombatCallouts();
     this.context.restore();
-    this.drawHud(state.hud, state.muted, state.selectedTowerId, towerMetrics);
+    const cardOverlayVisible = state.hud.flowState === 'offer-pending' && state.hud.activeOffer;
+    if (!cardOverlayVisible) {
+      this.drawHud(state.hud, state.muted, state.selectedTowerId, towerMetrics);
+    }
 
     const endlessHud = resolveEndlessHud(state.hud);
     const showEndlessSettlement = Boolean(
@@ -2372,7 +2469,6 @@ export class CanvasRenderer {
       );
       this.drawBackgroundExtensions(background);
       this.context.drawImage(background, 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
-      this.drawBackgroundEdgeShade();
       return;
     }
     const gradient = this.context.createLinearGradient(0, this.viewport.top, 0, this.viewport.bottom);
@@ -2414,67 +2510,17 @@ export class CanvasRenderer {
 
     this.context.save();
     this.applyBattleWorldTransform(cameraOffset);
-    const ambientBackground = this.resolveAmbientBackground(
-      this.bundle.stage.backgroundAssetId,
-      background,
-    );
-    this.context.globalAlpha = ambientBackground === background ? .48 : .62;
     this.drawBackgroundExtensions(
-      ambientBackground,
+      background,
       {
         left: worldTopLeft.x,
         top: worldTopLeft.y,
         right: worldBottomRight.x,
         bottom: worldBottomRight.y,
       },
-      {
-        width: ambientBackground === background ? DESIGN_WIDTH : BACKGROUND_AMBIENT_WIDTH,
-        height: ambientBackground === background ? DESIGN_HEIGHT : BACKGROUND_AMBIENT_HEIGHT,
-      },
     );
-    this.context.globalAlpha = 1;
     this.context.drawImage(background, 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
     this.context.restore();
-
-    const projectedTopLeft = projectBattleWorldPoint({ x: 0, y: 0 });
-    const projectedBottomRight = projectBattleWorldPoint({
-      x: DESIGN_WIDTH,
-      y: DESIGN_HEIGHT,
-    });
-    this.drawBackgroundEdgeShade(
-      {
-        left: projectedTopLeft.x + cameraOffset.x,
-        top: projectedTopLeft.y + cameraOffset.y,
-        right: projectedBottomRight.x + cameraOffset.x,
-        bottom: projectedBottomRight.y + cameraOffset.y,
-      },
-      .14,
-      .62,
-    );
-  }
-
-  private resolveAmbientBackground(assetId: string, background: any): any {
-    const cached = this.ambientBackgrounds.get(assetId);
-    if (cached) return cached;
-    const canvas = this.runtime.createCanvas?.();
-    const context = canvas?.getContext?.('2d');
-    if (!canvas || !context) return background;
-    canvas.width = BACKGROUND_AMBIENT_WIDTH;
-    canvas.height = BACKGROUND_AMBIENT_HEIGHT;
-    context.imageSmoothingEnabled = true;
-    context.drawImage(
-      background,
-      0,
-      0,
-      DESIGN_WIDTH,
-      DESIGN_HEIGHT,
-      0,
-      0,
-      BACKGROUND_AMBIENT_WIDTH,
-      BACKGROUND_AMBIENT_HEIGHT,
-    );
-    this.ambientBackgrounds.set(assetId, canvas);
-    return canvas;
   }
 
   private applyBattleWorldTransform(cameraOffset: DesignPoint): void {
@@ -2487,13 +2533,7 @@ export class CanvasRenderer {
   private drawBackgroundExtensions(
     background: any,
     bounds: Pick<ViewportLayout, 'left' | 'top' | 'right' | 'bottom'> = this.viewport,
-    sourceSize: Readonly<{ width: number; height: number }> = {
-      width: DESIGN_WIDTH,
-      height: DESIGN_HEIGHT,
-    },
   ): void {
-    const sourceScaleX = sourceSize.width / DESIGN_WIDTH;
-    const sourceScaleY = sourceSize.height / DESIGN_HEIGHT;
     const leftWidth = Math.max(0, -bounds.left);
     if (leftWidth > 0) {
       const sourceWidth = Math.min(DESIGN_WIDTH, leftWidth);
@@ -2501,8 +2541,8 @@ export class CanvasRenderer {
         background,
         0,
         0,
-        sourceWidth * sourceScaleX,
-        sourceSize.height,
+        sourceWidth,
+        DESIGN_HEIGHT,
         -leftWidth,
         0,
         leftWidth,
@@ -2517,10 +2557,10 @@ export class CanvasRenderer {
       const sourceWidth = Math.min(DESIGN_WIDTH, rightWidth);
       this.drawReflectedBackgroundRegion(
         background,
-        sourceSize.width - sourceWidth * sourceScaleX,
+        DESIGN_WIDTH - sourceWidth,
         0,
-        sourceWidth * sourceScaleX,
-        sourceSize.height,
+        sourceWidth,
+        DESIGN_HEIGHT,
         DESIGN_WIDTH,
         0,
         rightWidth,
@@ -2537,8 +2577,8 @@ export class CanvasRenderer {
         background,
         0,
         0,
-        sourceSize.width,
-        sourceHeight * sourceScaleY,
+        DESIGN_WIDTH,
+        sourceHeight,
         0,
         -topHeight,
         DESIGN_WIDTH,
@@ -2554,9 +2594,9 @@ export class CanvasRenderer {
       this.drawReflectedBackgroundRegion(
         background,
         0,
-        sourceSize.height - sourceHeight * sourceScaleY,
-        sourceSize.width,
-        sourceHeight * sourceScaleY,
+        DESIGN_HEIGHT - sourceHeight,
+        DESIGN_WIDTH,
+        sourceHeight,
         0,
         DESIGN_HEIGHT,
         DESIGN_WIDTH,
@@ -2570,15 +2610,15 @@ export class CanvasRenderer {
       leftWidth > 0
         ? {
           sourceX: 0,
-          sourceWidth: Math.min(DESIGN_WIDTH, leftWidth) * sourceScaleX,
+          sourceWidth: Math.min(DESIGN_WIDTH, leftWidth),
           targetX: -leftWidth,
           targetWidth: leftWidth,
         }
         : undefined,
       rightWidth > 0
         ? {
-          sourceX: sourceSize.width - Math.min(DESIGN_WIDTH, rightWidth) * sourceScaleX,
-          sourceWidth: Math.min(DESIGN_WIDTH, rightWidth) * sourceScaleX,
+          sourceX: DESIGN_WIDTH - Math.min(DESIGN_WIDTH, rightWidth),
+          sourceWidth: Math.min(DESIGN_WIDTH, rightWidth),
           targetX: DESIGN_WIDTH,
           targetWidth: rightWidth,
         }
@@ -2593,15 +2633,15 @@ export class CanvasRenderer {
       topHeight > 0
         ? {
           sourceY: 0,
-          sourceHeight: Math.min(DESIGN_HEIGHT, topHeight) * sourceScaleY,
+          sourceHeight: Math.min(DESIGN_HEIGHT, topHeight),
           targetY: -topHeight,
           targetHeight: topHeight,
         }
         : undefined,
       bottomHeight > 0
         ? {
-          sourceY: sourceSize.height - Math.min(DESIGN_HEIGHT, bottomHeight) * sourceScaleY,
-          sourceHeight: Math.min(DESIGN_HEIGHT, bottomHeight) * sourceScaleY,
+          sourceY: DESIGN_HEIGHT - Math.min(DESIGN_HEIGHT, bottomHeight),
+          sourceHeight: Math.min(DESIGN_HEIGHT, bottomHeight),
           targetY: DESIGN_HEIGHT,
           targetHeight: bottomHeight,
         }
@@ -2662,66 +2702,6 @@ export class CanvasRenderer {
       targetHeight,
     );
     this.context.restore();
-  }
-
-  private drawBackgroundEdgeShade(
-    contentBounds: Pick<ViewportLayout, 'left' | 'top' | 'right' | 'bottom'> = {
-      left: 0,
-      top: 0,
-      right: DESIGN_WIDTH,
-      bottom: DESIGN_HEIGHT,
-    },
-    innerOpacity = 0,
-    outerOpacity = .46,
-  ): void {
-    if (this.viewport.left < contentBounds.left) {
-      const gradient = this.context.createLinearGradient(this.viewport.left, 0, contentBounds.left, 0);
-      gradient.addColorStop(0, `rgba(1, 7, 18, ${outerOpacity})`);
-      gradient.addColorStop(1, `rgba(1, 7, 18, ${innerOpacity})`);
-      this.context.fillStyle = gradient;
-      this.context.fillRect(
-        this.viewport.left,
-        this.viewport.top,
-        contentBounds.left - this.viewport.left,
-        this.viewport.height,
-      );
-    }
-    if (this.viewport.right > contentBounds.right) {
-      const gradient = this.context.createLinearGradient(contentBounds.right, 0, this.viewport.right, 0);
-      gradient.addColorStop(0, `rgba(1, 7, 18, ${innerOpacity})`);
-      gradient.addColorStop(1, `rgba(1, 7, 18, ${outerOpacity})`);
-      this.context.fillStyle = gradient;
-      this.context.fillRect(
-        contentBounds.right,
-        this.viewport.top,
-        this.viewport.right - contentBounds.right,
-        this.viewport.height,
-      );
-    }
-    if (this.viewport.top < contentBounds.top) {
-      const gradient = this.context.createLinearGradient(0, this.viewport.top, 0, contentBounds.top);
-      gradient.addColorStop(0, `rgba(1, 7, 18, ${outerOpacity * .92})`);
-      gradient.addColorStop(1, `rgba(1, 7, 18, ${innerOpacity})`);
-      this.context.fillStyle = gradient;
-      this.context.fillRect(
-        this.viewport.left,
-        this.viewport.top,
-        this.viewport.width,
-        contentBounds.top - this.viewport.top,
-      );
-    }
-    if (this.viewport.bottom > contentBounds.bottom) {
-      const gradient = this.context.createLinearGradient(0, contentBounds.bottom, 0, this.viewport.bottom);
-      gradient.addColorStop(0, `rgba(1, 7, 18, ${innerOpacity})`);
-      gradient.addColorStop(1, `rgba(1, 7, 18, ${outerOpacity * .92})`);
-      this.context.fillStyle = gradient;
-      this.context.fillRect(
-        this.viewport.left,
-        contentBounds.bottom,
-        this.viewport.width,
-        this.viewport.bottom - contentBounds.bottom,
-      );
-    }
   }
 
   private drawRoute(): void {
@@ -4387,26 +4367,28 @@ export class CanvasRenderer {
   ): void {
     this.drawModalShade();
     const fixedShop = hud.mode === 'fixed';
+    const contentLayout = resolveCardOverlayContentLayout(this.scale);
+    const typography = contentLayout.typography;
     this.text(
       fixedShop ? `战功商店 · 可用 ${Math.max(0, hud.warPointsBalance)}` : '境界突破',
       960,
-      112,
-      26,
+      108,
+      typography.eyebrow,
       fixedShop ? '#f0ca72' : '#74dfdb',
       'center',
       650,
-      12,
+      0,
       CARD_BODY_FONT,
     );
     this.text(
       fixedShop ? '选择本波增援' : '择一法门，守住关城',
       960,
-      170,
-      48,
+      164,
+      typography.heading,
       '#f4e6c4',
       'center',
       700,
-      17,
+      0,
       CARD_SERIF_FONT,
     );
     this.text(
@@ -4414,12 +4396,12 @@ export class CanvasRenderer {
         ? `技能对当前及后续箭塔生效 · 每波最多兑换 ${hud.shopPurchaseLimitPerWave} 次`
         : '强化会立即作用于三座箭塔',
       960,
-      216,
-      23,
+      210,
+      typography.subtitle,
       'rgba(231,241,237,.72)',
       'center',
       400,
-      12,
+      0,
       CARD_BODY_FONT,
     );
     const { cardWidth, cardHeight, cardY, starts } = resolveCardOverlayLayout(this.viewport);
@@ -4434,233 +4416,170 @@ export class CanvasRenderer {
       const color = QUALITY_COLOR[card.quality];
       const preview = projectedPreviews.find((candidate) => candidate.cardId === cardId)
         ?? fallbackCardPreview(card, towerStats.current);
-      const previewCopy = cardPreviewCopy(card, preview);
+      const previewUnchanged = cardPreviewIsUnchanged(card, preview);
+      const metricPresentation = cardMetricPresentation(card, preview);
       const warPointCost = preview.warPointCost ?? card.warPointCost ?? 0;
       const selected = fixedShop && selectedCardId === cardId;
       const affordable = !fixedShop || warPointCost <= hud.warPointsBalance;
-      const disabled = fixedShop && (!affordable || (preview.capped && previewCopy.unchanged));
+      const disabled = fixedShop && (!affordable || (preview.capped && previewUnchanged));
 
       const cardBackground = this.context.createLinearGradient(x, cardY, x + cardWidth, cardY + cardHeight);
-      cardBackground.addColorStop(0, disabled ? 'rgba(74, 84, 90, .16)' : `${color}${selected ? '3d' : '24'}`);
-      cardBackground.addColorStop(.38, disabled ? 'rgba(10, 21, 31, .96)' : 'rgba(7, 24, 43, .98)');
+      cardBackground.addColorStop(0, disabled ? 'rgba(74, 84, 90, .13)' : `${color}${selected ? '2e' : '18'}`);
+      cardBackground.addColorStop(.32, disabled ? 'rgba(10, 21, 31, .96)' : 'rgba(7, 24, 43, .98)');
       cardBackground.addColorStop(1, 'rgba(3, 14, 29, .99)');
       this.context.save();
-      this.context.shadowColor = disabled ? 'rgba(0,0,0,0)' : `${color}${selected ? '8a' : '38'}`;
-      this.context.shadowBlur = selected ? 36 : 24;
+      this.context.shadowColor = disabled ? 'rgba(0,0,0,0)' : `${color}${selected ? '66' : '24'}`;
+      this.context.shadowBlur = selected ? 22 : 10;
       this.context.fillStyle = cardBackground;
-      this.context.strokeStyle = disabled ? 'rgba(128, 145, 150, .42)' : color;
-      this.context.lineWidth = selected ? 6 : 3;
+      this.context.strokeStyle = disabled ? 'rgba(128, 145, 150, .38)' : selected ? color : `${color}b8`;
+      this.context.lineWidth = selected ? 3.5 : 2;
       this.roundRect(x, cardY, cardWidth, cardHeight, 24);
       this.context.fill();
       this.context.stroke();
       this.context.restore();
 
-      this.context.strokeStyle = `${color}52`;
-      this.context.lineWidth = 1.5;
+      this.context.strokeStyle = disabled ? 'rgba(138,151,154,.22)' : `${color}${selected ? '52' : '32'}`;
+      this.context.lineWidth = 1;
       this.roundRect(x + 11, cardY + 11, cardWidth - 22, cardHeight - 22, 17);
       this.context.stroke();
 
-      this.text(`0${index + 1}`, x + 30, cardY + 50, 22, 'rgba(235,241,232,.52)', 'left', 600, 12, CARD_NUMBER_FONT);
+      this.text(
+        `0${index + 1}`,
+        x + contentLayout.metaSideInset,
+        cardY + contentLayout.metaTop + contentLayout.metaHeight / 2,
+        typography.meta,
+        'rgba(235,241,232,.48)',
+        'left',
+        600,
+        0,
+        CARD_NUMBER_FONT,
+        'middle',
+      );
       this.pill(
-        x + cardWidth - 140,
-        cardY + 20,
-        110,
-        42,
+        x + cardWidth - contentLayout.metaSideInset - contentLayout.qualityPillWidth,
+        cardY + contentLayout.metaTop,
+        contentLayout.qualityPillWidth,
+        contentLayout.metaHeight,
         QUALITY_NAME[card.quality],
-        `${color}24`,
-        color,
-        20,
-        13,
+        `${color}18`,
+        disabled ? 'rgba(189,199,198,.54)' : color,
+        typography.meta,
       );
       if (fixedShop) {
         this.pill(
-          x + (cardWidth - 138) / 2,
-          cardY + 20,
-          138,
-          42,
+          x + (cardWidth - contentLayout.costPillWidth) / 2,
+          cardY + contentLayout.metaTop,
+          contentLayout.costPillWidth,
+          contentLayout.metaHeight,
           `${warPointCost} 战功`,
-          affordable ? 'rgba(98, 76, 28, .62)' : 'rgba(77, 42, 45, .72)',
+          affordable ? 'rgba(98, 76, 28, .54)' : 'rgba(77, 42, 45, .60)',
           affordable ? '#f6d379' : '#ff9c91',
-          19,
-          12,
+          typography.meta,
         );
       }
 
+      const iconCenterY = cardY + contentLayout.iconTop + contentLayout.iconSize / 2;
       const iconGlow = this.context.createRadialGradient(
         x + cardWidth / 2,
-        cardY + 150,
-        12,
+        iconCenterY,
+        8,
         x + cardWidth / 2,
-        cardY + 150,
-        78,
+        iconCenterY,
+        66,
       );
-      iconGlow.addColorStop(0, `${color}3d`);
+      iconGlow.addColorStop(0, `${color}${disabled ? '18' : '32'}`);
       iconGlow.addColorStop(1, `${color}00`);
       this.context.fillStyle = iconGlow;
       this.context.beginPath();
-      this.context.arc(x + cardWidth / 2, cardY + 150, 78, 0, Math.PI * 2);
+      this.context.arc(x + cardWidth / 2, iconCenterY, 66, 0, Math.PI * 2);
       this.context.fill();
 
       const icon = this.images.get(card.iconAssetId);
-      if (icon) this.context.drawImage(icon, x + (cardWidth - 112) / 2, cardY + 94, 112, 112);
-      else this.drawSeal(x + cardWidth / 2, cardY + 146, 54, card.effectId === 'tower-count' ? '塔' : '法');
+      if (icon) {
+        this.context.globalAlpha = disabled ? .56 : 1;
+        this.context.drawImage(
+          icon,
+          x + (cardWidth - contentLayout.iconSize) / 2,
+          cardY + contentLayout.iconTop,
+          contentLayout.iconSize,
+          contentLayout.iconSize,
+        );
+        this.context.globalAlpha = 1;
+      } else {
+        this.drawSeal(
+          x + cardWidth / 2,
+          iconCenterY,
+          contentLayout.iconSize / 2,
+          card.effectId === 'tower-count' ? '塔' : '法',
+        );
+      }
 
-      this.text(card.name, x + cardWidth / 2, cardY + 258, 38, '#f4ead3', 'center', 700, 18, CARD_SERIF_FONT);
+      this.fitText(
+        card.name,
+        x + cardWidth / 2,
+        cardY + contentLayout.titleBaseline,
+        cardWidth - 64,
+        typography.title,
+        disabled ? 'rgba(224,221,209,.62)' : '#f4ead3',
+        'center',
+        700,
+        0,
+        CARD_SERIF_FONT,
+      );
 
       const rule = this.context.createLinearGradient(x + 70, 0, x + cardWidth - 70, 0);
       rule.addColorStop(0, `${color}00`);
-      rule.addColorStop(.5, `${color}b3`);
+      rule.addColorStop(.5, `${color}${disabled ? '32' : '7a'}`);
       rule.addColorStop(1, `${color}00`);
       this.context.fillStyle = rule;
-      this.context.fillRect(x + 70, cardY + 284, cardWidth - 140, 2);
+      this.context.fillRect(x + 70, cardY + contentLayout.dividerY, cardWidth - 140, 1.5);
 
-      this.text(
-        card.effectId === 'tower-count' ? '当前塔数  →  增援后' : '当前  →  兑换后',
-        x + cardWidth / 2,
-        cardY + 318,
-        17,
-        'rgba(224,240,234,.58)',
-        'center',
-        580,
-        10,
-        CARD_BODY_FONT,
-      );
-      const contentWidth = cardWidth - 72;
-      const primaryColor = disabled ? 'rgba(184, 198, 198, .62)' : color;
-      if (card.effectId === 'critical-mastery') {
-        this.fitText(
-          `暴击  ${formatBp(preview.before.critChanceBp)}  →  ${formatBp(preview.after.critChanceBp)}`,
-          x + cardWidth / 2,
-          cardY + 348,
-          contentWidth,
-          24,
-          primaryColor,
-          'center',
-          740,
-          14,
-          CARD_NUMBER_FONT,
-        );
-        this.fitText(
-          `暴伤  ${formatBp(preview.before.critDamageBp)}  →  ${formatBp(preview.after.critDamageBp)}`,
-          x + cardWidth / 2,
-          cardY + 379,
-          contentWidth,
-          24,
-          primaryColor,
-          'center',
-          740,
-          14,
-          CARD_NUMBER_FONT,
-        );
-      } else {
-        this.fitText(
-          previewCopy.beforeAfter,
-          x + cardWidth / 2,
-          cardY + 365,
-          contentWidth,
-          34,
-          primaryColor,
-          'center',
-          740,
-          15,
-          CARD_NUMBER_FONT,
-        );
-      }
-      const capPrefix = preview.capped
-        ? previewCopy.unchanged ? '已达上限' : '部分生效'
-        : '';
-      const amount = card.effectId === 'tower-count' || card.effectId === 'critical-mastery'
-        ? ''
-        : ` · ${cardAmount(card)}`;
-      const deltaLabel = `${capPrefix ? `${capPrefix} · ` : ''}${previewCopy.actualDelta}${amount}`;
       const secondaryColor = disabled
         ? 'rgba(190,202,199,.48)'
         : preview.capped
           ? '#ffbf7a'
           : 'rgba(225,239,233,.78)';
-      if (card.effectId === 'critical-mastery') {
-        const critRateDelta = preview.after.critChanceBp - preview.before.critChanceBp;
-        const critDamageDelta = preview.after.critDamageBp - preview.before.critDamageBp;
-        const criticalCapPrefix = capPrefix ? `${capPrefix} · ` : '';
-        this.fitText(
-          `${criticalCapPrefix}实际暴击 ${signed(critRateDelta, (value) => `${value / 100}pp`)}`,
-          x + cardWidth / 2,
-          cardY + 412,
-          contentWidth,
-          17,
-          secondaryColor,
-          'center',
-          650,
-          10,
-          CARD_BODY_FONT,
-        );
-        this.fitText(
-          `实际暴伤 ${signed(critDamageDelta, (value) => `${value / 100}pp`)}`,
-          x + cardWidth / 2,
-          cardY + 435,
-          contentWidth,
-          17,
-          secondaryColor,
-          'center',
-          650,
-          10,
-          CARD_BODY_FONT,
-        );
-      } else {
-        this.wrapText(
-          deltaLabel,
-          x + cardWidth / 2,
-          cardY + 405,
-          contentWidth,
-          23,
-          17,
-          secondaryColor,
-          650,
-          10,
-          2,
-          CARD_BODY_FONT,
-        );
-      }
-      this.fitText(
-        cardDescription(card),
-        x + cardWidth / 2,
-        cardY + 467,
-        cardWidth - 84,
-        19,
-        'rgba(224,240,234,.72)',
-        'center',
-        450,
-        12,
-        CARD_BODY_FONT,
+      this.drawCardMetricPanel(
+        x + 24,
+        cardY,
+        cardWidth - 48,
+        metricPresentation,
+        color,
+        secondaryColor,
+        disabled,
+        contentLayout,
+        fixedShop ? '兑换后' : '选择后',
       );
 
-      const choiceWidth = 250;
-      const choiceHeight = 50;
-      const choiceX = x + (cardWidth - choiceWidth) / 2;
-      const choiceY = cardY + 500;
+      const choiceWidth = cardWidth - 48;
+      const choiceHeight = contentLayout.actionHeight;
+      const choiceX = x + 24;
+      const choiceY = cardY + contentLayout.actionTop;
       this.context.fillStyle = disabled ? 'rgba(120,130,132,.08)' : selected ? `${color}38` : `${color}18`;
       this.context.strokeStyle = disabled ? 'rgba(140,150,151,.28)' : selected ? color : `${color}70`;
-      this.context.lineWidth = 1.5;
+      this.context.lineWidth = selected ? 2 : 1.25;
       this.roundRect(choiceX, choiceY, choiceWidth, choiceHeight, choiceHeight / 2);
       this.context.fill();
       this.context.stroke();
-      this.text(
-        fixedShop
-          ? !affordable
-            ? `战功不足 · 需 ${warPointCost}`
-            : preview.capped && previewCopy.unchanged
-              ? '已达上限'
-              : selected
-                ? '已选中 · 待确认'
-                : `${warPointCost} 战功 · 点选`
-          : '选择此法门',
+      const choiceLabel = fixedShop
+        ? !affordable
+          ? `还差 ${Math.max(0, warPointCost - hud.warPointsBalance)} 战功`
+          : preview.capped && previewUnchanged
+            ? '已达上限'
+            : selected
+              ? '已选择'
+              : '选择'
+        : '选择此法门';
+      this.fitText(
+        choiceLabel,
         choiceX + choiceWidth / 2,
         choiceY + choiceHeight / 2,
-        22,
+        choiceWidth - 36,
+        typography.action,
         disabled ? 'rgba(194,204,201,.46)' : color,
         'center',
         650,
-        15,
+        0,
         CARD_BODY_FONT,
         'middle',
       );
@@ -4691,31 +4610,60 @@ export class CanvasRenderer {
       const confirmEnabled = selectedCard !== undefined &&
         selectedCost !== undefined &&
         selectedCost <= hud.warPointsBalance &&
-        !(selectedPreview?.capped && cardPreviewCopy(selectedCard, selectedPreview).unchanged);
+        !(selectedPreview?.capped && cardPreviewIsUnchanged(selectedCard, selectedPreview));
       const confirmLabel = selectedCost === undefined
         ? '先选择一项增援'
-        : `花费 ${selectedCost} 战功 · 确认兑换`;
+        : `${selectedCost} 战功 · 确认兑换`;
       if (confirmEnabled) {
-        this.drawButton(
-          'shop-confirm',
-          900,
-          858,
-          452,
-          68,
+        const confirmX = 900;
+        const confirmY = 858;
+        const confirmWidth = 452;
+        const confirmHeight = 68;
+        this.context.fillStyle = '#d0a24d';
+        this.context.strokeStyle = '#f5d77e';
+        this.context.lineWidth = 2;
+        this.roundRect(confirmX, confirmY, confirmWidth, confirmHeight, 18);
+        this.context.fill();
+        this.context.stroke();
+        this.fitText(
           confirmLabel,
-          '#d0a24d',
+          confirmX + confirmWidth / 2,
+          confirmY + confirmHeight / 2,
+          confirmWidth - 36,
+          typography.action,
           '#07152a',
-          '#f5d77e',
-          23,
-          14,
+          'center',
+          700,
+          0,
+          CARD_BODY_FONT,
+          'middle',
         );
+        this.interactions.push({
+          id: 'shop-confirm',
+          x: confirmX,
+          y: confirmY,
+          width: confirmWidth,
+          height: confirmHeight,
+        });
       } else {
         this.context.fillStyle = 'rgba(112, 105, 83, .24)';
         this.context.strokeStyle = 'rgba(183, 174, 145, .3)';
         this.roundRect(900, 858, 452, 68, 18);
         this.context.fill();
         this.context.stroke();
-        this.text(confirmLabel, 1_126, 901, 22, 'rgba(219,217,202,.42)', 'center', 700, 13);
+        this.fitText(
+          confirmLabel,
+          1_126,
+          892,
+          420,
+          typography.action,
+          'rgba(219,217,202,.42)',
+          'center',
+          700,
+          0,
+          CARD_BODY_FONT,
+          'middle',
+        );
       }
       return;
     }
@@ -4732,7 +4680,19 @@ export class CanvasRenderer {
       this.roundRect(960 - rerollWidth / 2, 858, rerollWidth, 68, 18);
       this.context.fill();
       this.context.stroke();
-      this.text(rerollLabel, 960, 901, 22, 'rgba(210,220,215,.46)', 'center', 650, 13);
+      this.fitText(
+        rerollLabel,
+        960,
+        892,
+        rerollWidth - 32,
+        typography.action,
+        'rgba(210,220,215,.46)',
+        'center',
+        650,
+        0,
+        CARD_BODY_FONT,
+        'middle',
+      );
     } else {
       this.drawButton(
         'card-reroll',
@@ -4748,6 +4708,129 @@ export class CanvasRenderer {
         15,
       );
     }
+  }
+
+  private drawCardMetricPanel(
+    x: number,
+    cardY: number,
+    width: number,
+    presentation: CardMetricPresentation,
+    accent: string,
+    deltaColor: string,
+    disabled: boolean,
+    layout: CardOverlayContentLayout,
+    afterLabel: string,
+  ): void {
+    const panelY = cardY + layout.metricTop;
+    const panelHeight = layout.metricHeight;
+    this.context.fillStyle = disabled ? 'rgba(215,225,222,.025)' : 'rgba(113, 157, 168, .055)';
+    this.context.strokeStyle = disabled ? 'rgba(159,172,171,.12)' : `${accent}24`;
+    this.context.lineWidth = 1;
+    this.roundRect(x, panelY, width, panelHeight, 16);
+    this.context.fill();
+    this.context.stroke();
+
+    const labelX = x + 18;
+    const beforeX = x + width * .50;
+    const arrowX = x + width * .68;
+    const afterX = x + width * .84;
+    const labelWidth = width * .31;
+    const valueWidth = width * .20;
+    const currentColor = disabled ? 'rgba(190,201,199,.48)' : 'rgba(220,230,226,.76)';
+    const afterColor = disabled ? 'rgba(190,201,199,.52)' : accent;
+
+    this.text(
+      '当前',
+      beforeX,
+      cardY + layout.metricHeaderBaseline,
+      layout.typography.label,
+      'rgba(207,222,217,.48)',
+      'center',
+      500,
+      0,
+      CARD_BODY_FONT,
+    );
+    this.text(
+      afterLabel,
+      afterX,
+      cardY + layout.metricHeaderBaseline,
+      layout.typography.label,
+      'rgba(207,222,217,.60)',
+      'center',
+      600,
+      0,
+      CARD_BODY_FONT,
+    );
+
+    const rowBaselines = presentation.rows.length > 1
+      ? layout.masteryMetricBaselines
+      : [layout.singleMetricBaseline] as const;
+    const valueSize = presentation.rows.length > 1
+      ? layout.typography.masteryValue
+      : layout.typography.value;
+    presentation.rows.forEach((row, index) => {
+      const baseline = cardY + (rowBaselines[index] ?? layout.singleMetricBaseline);
+      this.fitText(
+        row.label,
+        labelX,
+        baseline,
+        labelWidth,
+        layout.typography.label,
+        currentColor,
+        'left',
+        600,
+        0,
+        CARD_BODY_FONT,
+      );
+      this.fitText(
+        row.before,
+        beforeX,
+        baseline,
+        valueWidth,
+        valueSize,
+        currentColor,
+        'center',
+        700,
+        0,
+        CARD_NUMBER_FONT,
+      );
+      this.text(
+        '→',
+        arrowX,
+        baseline,
+        layout.typography.label,
+        'rgba(198,215,210,.42)',
+        'center',
+        500,
+        0,
+        CARD_BODY_FONT,
+      );
+      this.fitText(
+        row.after,
+        afterX,
+        baseline,
+        valueWidth,
+        valueSize,
+        afterColor,
+        'center',
+        750,
+        0,
+        CARD_NUMBER_FONT,
+      );
+    });
+
+    this.fitText(
+      presentation.delta,
+      x + width / 2,
+      cardY + layout.deltaBaseline,
+      width - 32,
+      layout.typography.delta,
+      deltaColor,
+      'center',
+      600,
+      0,
+      CARD_BODY_FONT,
+    );
   }
 
   private drawTowerStrategyPanel(

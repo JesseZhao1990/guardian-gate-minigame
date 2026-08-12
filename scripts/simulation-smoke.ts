@@ -43,6 +43,7 @@ import {
   projectBattleWorldPoint,
   resolveBreachSealPlacement,
   resolveCanvasFontWeight,
+  resolveCardOverlayContentLayout,
   resolveCardOverlayLayout,
   resolveHomeStageCardLayout,
   resolveViewportLayout,
@@ -911,18 +912,58 @@ for (const [width, height] of responsiveViewports) {
   assert.ok(viewport.right >= 1_920 && viewport.bottom >= 1_080);
 
   const cardLayout = resolveCardOverlayLayout(viewport);
+  const contentLayout = resolveCardOverlayContentLayout(viewport.scale);
   for (const start of cardLayout.starts) {
     assert.ok(start >= viewport.left);
     assert.ok(start + cardLayout.cardWidth <= viewport.right);
   }
   assert.ok(cardLayout.starts[1] > cardLayout.starts[0] + cardLayout.cardWidth);
   assert.ok(cardLayout.starts[2] > cardLayout.starts[1] + cardLayout.cardWidth);
+
+  const costPillLeft = (cardLayout.cardWidth - contentLayout.costPillWidth) / 2;
+  const costPillRight = costPillLeft + contentLayout.costPillWidth;
+  const qualityPillLeft = cardLayout.cardWidth -
+    contentLayout.metaSideInset -
+    contentLayout.qualityPillWidth;
+  assert.ok(qualityPillLeft - costPillRight >= 24);
+  assert.ok(contentLayout.metaTop + contentLayout.metaHeight < contentLayout.iconTop);
+  assert.ok(
+    contentLayout.iconTop + contentLayout.iconSize <=
+      contentLayout.titleBaseline - contentLayout.typography.title,
+  );
+  assert.ok(
+    contentLayout.titleBaseline + contentLayout.typography.title * .35 < contentLayout.dividerY,
+  );
+  assert.ok(contentLayout.dividerY < contentLayout.metricTop);
+  assert.ok(
+    contentLayout.masteryMetricBaselines[1] - contentLayout.masteryMetricBaselines[0] >=
+      contentLayout.typography.masteryValue * 1.4,
+  );
+  assert.ok(
+    contentLayout.deltaBaseline - contentLayout.masteryMetricBaselines[1] >=
+      Math.max(contentLayout.typography.masteryValue, contentLayout.typography.delta) * 1.4,
+  );
+  assert.ok(
+    contentLayout.deltaBaseline - contentLayout.singleMetricBaseline >=
+      Math.max(contentLayout.typography.value, contentLayout.typography.delta) * 1.4,
+  );
+  assert.ok(contentLayout.metricTop + contentLayout.metricHeight < contentLayout.actionTop);
+  assert.ok(contentLayout.actionTop + contentLayout.actionHeight <= cardLayout.cardHeight);
+  assert.ok(cardLayout.cardY - 210 >= contentLayout.typography.subtitle * 1.5);
 }
 
 const twentyByNineViewport = resolveViewportLayout(2_400, 1_080);
 assert.equal(twentyByNineViewport.left, -240);
 assert.equal(twentyByNineViewport.right, 2_160);
 assert.deepEqual(resolveCardOverlayLayout(twentyByNineViewport).starts, [90, 710, 1_330]);
+const compactCardContent = resolveCardOverlayContentLayout(resolveViewportLayout(800, 360).scale);
+assert.equal(compactCardContent.typography.meta, 22);
+assert.equal(compactCardContent.typography.title, 36);
+assert.equal(compactCardContent.typography.label, 20);
+assert.equal(compactCardContent.typography.value, 30);
+assert.equal(compactCardContent.typography.masteryValue, 24);
+assert.equal(compactCardContent.typography.delta, 20);
+assert.equal(compactCardContent.typography.action, 27);
 assert.equal(resolveCanvasFontWeight(450), 'normal');
 assert.equal(resolveCanvasFontWeight(650), 'bold');
 assert.equal(resolveCanvasFontWeight(720), 'bold');
