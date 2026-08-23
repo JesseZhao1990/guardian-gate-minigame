@@ -23,6 +23,17 @@ const assert = {
   },
 };
 
+function startPreparedWave(simulation: BattleSimulation): void {
+  const hud = simulation.getHudProjection();
+  assert.equal(hud.flowState, 'preparing');
+  const output = simulation.applyCommand({
+    seq: hud.lastCommandSeq + 1,
+    type: 'START_WAVE',
+  });
+  assert.equal(output.commandAcks[0]?.status, 'applied');
+  assert.equal(simulation.getHudProjection().flowState, 'running');
+}
+
 const expectedBaseStats: EffectiveTowerStatsV1 = {
   damagePerArrowMilli: 32_000,
   criticalDamagePerArrowMilli: 48_000,
@@ -38,6 +49,7 @@ const expectedBaseStats: EffectiveTowerStatsV1 = {
 
 const initialSimulation = createBattleSimulation(createStage01Bundle(), 0x57a75);
 const initialHud = initialSimulation.getHudProjection();
+assert.equal(initialHud.flowState, 'preparing');
 assert.deepEqual(initialHud.towerStats, {
   base: expectedBaseStats,
   afterLevel: expectedBaseStats,
@@ -54,6 +66,7 @@ assert.deepEqual(
     { towerId: 0, active: true, enemiesInRange: 0, preferredEnemiesInRange: 0 },
     { towerId: 1, active: true, enemiesInRange: 0, preferredEnemiesInRange: 0 },
     { towerId: 2, active: false, enemiesInRange: 0, preferredEnemiesInRange: 0 },
+    { towerId: 3, active: false, enemiesInRange: 0, preferredEnemiesInRange: 0 },
   ],
 );
 assert.equal(initialHud.offerPreviews, undefined);
@@ -74,6 +87,7 @@ hitWave.groups = [{ enemyId: hitEnemy.id, count: 2, intervalTicks: 1 }];
 hitEnemy.maxHpMilli = 100_000;
 hitEnemy.armorBp = 0;
 const hitSimulation = createBattleSimulation(hitBundle, 0x117da7a);
+startPreparedWave(hitSimulation);
 const hitEvents: Array<Extract<BattleEvent, { type: 'HIT' }>> = [];
 for (let tick = 0; tick < 180 && hitEvents.length === 0; tick += 1) {
   const output = hitSimulation.advanceTicks(1);
@@ -83,7 +97,9 @@ for (let tick = 0; tick < 180 && hitEvents.length === 0; tick += 1) {
 }
 assert.ok(hitEvents.length > 0);
 for (const hit of hitEvents) {
-  assert.ok(hit.towerId === 0 || hit.towerId === 1 || hit.towerId === 2);
+  assert.ok(
+    hit.towerId === 0 || hit.towerId === 1 || hit.towerId === 2 || hit.towerId === 3,
+  );
   assert.ok(Number.isSafeInteger(hit.penetrationIndex) && hit.penetrationIndex >= 0);
   assert.ok(Number.isFinite(hit.impactX));
   assert.ok(Number.isFinite(hit.impactY));
@@ -94,7 +110,7 @@ assert.equal(
   hitEvents.reduce((sum, hit) => sum + hit.damageMilli, 0),
 );
 const runtimeWithTargets = hitSimulation.getHudProjection().towerRuntime;
-assert.equal(runtimeWithTargets.length, 3);
+assert.equal(runtimeWithTargets.length, 4);
 assert.ok(runtimeWithTargets.filter((tower) => tower.active).every((tower) => tower.enemiesInRange > 0));
 assert.ok(runtimeWithTargets.filter((tower) => tower.active).every(
   (tower) => tower.currentTargetEntityId !== undefined,
@@ -102,12 +118,20 @@ assert.ok(runtimeWithTargets.filter((tower) => tower.active).every(
 assert.ok(runtimeWithTargets.filter((tower) => tower.active).every(
   (tower) => tower.currentTargetName === hitEnemy.name,
 ));
-assert.deepEqual(runtimeWithTargets.find((tower) => !tower.active), {
-  towerId: 2,
-  active: false,
-  enemiesInRange: 0,
-  preferredEnemiesInRange: 0,
-});
+assert.deepEqual(runtimeWithTargets.filter((tower) => !tower.active), [
+  {
+    towerId: 2,
+    active: false,
+    enemiesInRange: 0,
+    preferredEnemiesInRange: 0,
+  },
+  {
+    towerId: 3,
+    active: false,
+    enemiesInRange: 0,
+    preferredEnemiesInRange: 0,
+  },
+]);
 
 const previewBundle = createStage01Bundle();
 previewBundle.tower.rangePx = 5_000;
@@ -133,10 +157,14 @@ for (const cardId of previewCards) {
 }
 
 const previewSimulation = createBattleSimulation(previewBundle, 0xc4ad5);
+startPreparedWave(previewSimulation);
 for (let tick = 0; tick < 180 && previewSimulation.getHudProjection().warPointsBalance < 2; tick += 1) {
   previewSimulation.advanceTicks(1);
 }
-const shopOutput = previewSimulation.applyCommand({ seq: 1, type: 'OPEN_SHOP' });
+const shopOutput = previewSimulation.applyCommand({
+  seq: previewSimulation.getHudProjection().lastCommandSeq + 1,
+  type: 'OPEN_SHOP',
+});
 const offerRequest = shopOutput.flowRequests.find((candidate) => candidate.type === 'OFFER');
 const offerOrdinal = offerRequest?.type === 'OFFER' ? offerRequest.ordinal : undefined;
 assert.ok(offerOrdinal !== undefined);

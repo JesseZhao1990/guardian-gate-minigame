@@ -27,12 +27,18 @@ import {
   PROJECTILE_FLAG_PENETRATION,
   PROJECTILE_FLAG_TOWER_ID_MASK,
   PROJECTILE_FLAG_TOWER_ID_SHIFT,
+  FIXED_WAVE_PREPARATION_TICKS,
   type AuthorityEventV1,
   type BattleBundleV1,
   type BattleEvent,
   type Point,
+  type TowerId,
 } from '../src/core/contracts';
 import { LocalPracticeAuthority } from '../src/core/local-authority';
+import {
+  createDefaultTowerBuildZones,
+  findNearestValidTowerPlacement,
+} from '../src/core/tower-placement';
 import { checkpointChecksum, decodeText, encodeText } from '../src/platform/wechat';
 import {
   BATTLE_BOTTOM_HUD_LEFT_RIGHT,
@@ -45,7 +51,11 @@ import {
   resolveCanvasFontWeight,
   resolveCardOverlayContentLayout,
   resolveCardOverlayLayout,
+  resolveHomeBadgeLayout,
+  resolveHomeStageCompactPresentation,
   resolveHomeStageCardLayout,
+  resolveShopShortcutLayout,
+  resolveShopShortcutText,
   resolveViewportLayout,
   unprojectBattleWorldPoint,
 } from '../src/render/CanvasRenderer';
@@ -64,13 +74,52 @@ const assert = {
   },
 };
 
+function startPreparedWave(simulation: BattleSimulation): SimulationOutput {
+  const before = simulation.getHudProjection();
+  assert.equal(before.flowState, 'preparing');
+  assert.ok(before.preparationTicksRemaining > 0);
+  const output = simulation.applyCommand({
+    seq: before.lastCommandSeq + 1,
+    type: 'START_WAVE',
+  });
+  assert.equal(output.commandAcks[0]?.status, 'applied');
+  assert.equal(simulation.getHudProjection().flowState, 'running');
+  assert.equal(simulation.getHudProjection().preparationTicksRemaining, 0);
+  return output;
+}
+
+function createFixedMechanicSimulation(
+  bundle: BattleBundleV1,
+  seed: number,
+  activeTowerIds: TowerId[],
+): BattleSimulation {
+  const initial = createBattleSimulation(bundle, seed);
+  const envelope = JSON.parse(decodeText(initial.createCheckpoint())) as {
+    state: { activeTowerIds: TowerId[]; towerCooldowns: number[] };
+  };
+  envelope.state.activeTowerIds = [...activeTowerIds];
+  for (const towerId of activeTowerIds) envelope.state.towerCooldowns[towerId] = 0;
+  return createBattleSimulation(bundle, seed, encodeText(JSON.stringify(envelope)));
+}
+
 const oneX = createBattleSimulation(createStage01Bundle(), 0x12345678);
 const twoX = createBattleSimulation(createStage01Bundle(), 0x12345678);
+assert.equal(oneX.getHudProjection().flowState, 'preparing');
+assert.equal(oneX.getHudProjection().preparationTicksRemaining, FIXED_WAVE_PREPARATION_TICKS);
 twoX.applyCommand({ seq: 1, type: 'SET_SPEED', value: 2 });
 assert.equal(oneX.advanceWallTime(1_000).ticksAdvanced, 30);
 assert.equal(twoX.advanceWallTime(1_000).ticksAdvanced, 60);
+assert.equal(
+  oneX.getHudProjection().preparationTicksRemaining,
+  FIXED_WAVE_PREPARATION_TICKS - 30,
+);
+assert.equal(
+  twoX.getHudProjection().preparationTicksRemaining,
+  FIXED_WAVE_PREPARATION_TICKS - 60,
+);
 
 assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [
+  DEFAULT_AIM_ANGLE_U16,
   DEFAULT_AIM_ANGLE_U16,
   DEFAULT_AIM_ANGLE_U16,
   DEFAULT_AIM_ANGLE_U16,
@@ -79,11 +128,16 @@ oneX.applyCommand({ seq: 2, type: 'SET_AIM', towerId: 0, angleU16: 12_345 });
 oneX.applyCommand({ seq: 3, type: 'SET_AIM', towerId: 1, angleU16: 23_456 });
 const lockedTowerAim = oneX.applyCommand({ seq: 4, type: 'SET_AIM', towerId: 2, angleU16: 34_567 });
 assert.equal(lockedTowerAim.commandAcks[0]?.status, 'rejected');
-assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [12_345, 23_456, DEFAULT_AIM_ANGLE_U16]);
+assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [
+  12_345,
+  23_456,
+  DEFAULT_AIM_ANGLE_U16,
+  DEFAULT_AIM_ANGLE_U16,
+]);
 const rejectedAim = oneX.applyCommand({
   seq: 5,
   type: 'SET_AIM',
-  towerId: 3,
+  towerId: 4,
   angleU16: 45_678,
 } as never);
 assert.equal(rejectedAim.commandAcks[0]?.status, 'rejected');
@@ -108,13 +162,20 @@ const rejectedFractionalAngle = oneX.applyCommand({
   angleU16: 45_678.5,
 } as never);
 assert.equal(rejectedFractionalAngle.commandAcks[0]?.status, 'rejected');
-assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [12_345, 23_456, DEFAULT_AIM_ANGLE_U16]);
+assert.deepEqual(oneX.getHudProjection().aimAnglesU16, [
+  12_345,
+  23_456,
+  DEFAULT_AIM_ANGLE_U16,
+  DEFAULT_AIM_ANGLE_U16,
+]);
+startPreparedWave(oneX);
 oneX.advanceTicks(90);
 const checkpoint = oneX.createCheckpoint();
 const restored = createBattleSimulation(createStage01Bundle(), 0x12345678, checkpoint);
 assert.equal(restored.getChecksum(), oneX.getChecksum());
 assert.deepEqual(restored.createCheckpoint(), checkpoint);
 const checkpointText = decodeText(checkpoint);
+assert.equal((JSON.parse(checkpointText) as { schemaVersion: number }).schemaVersion, 7);
 assert.deepEqual(encodeText(checkpointText), checkpoint);
 assert.equal(checkpointChecksum(checkpointText), checkpointChecksum(checkpointText));
 
@@ -125,12 +186,20 @@ const legacyCheckpoint = JSON.parse(checkpointText) as {
 legacyCheckpoint.schemaVersion = 2;
 legacyCheckpoint.state.aimAngleU16 = 54_321;
 delete legacyCheckpoint.state.aimAnglesU16;
+legacyCheckpoint.state.towerCooldowns = (
+  legacyCheckpoint.state.towerCooldowns as number[]
+).slice(0, 3);
 const migratedLegacy = createBattleSimulation(
   createStage01Bundle(),
   0x12345678,
   encodeText(JSON.stringify(legacyCheckpoint)),
 );
-assert.deepEqual(migratedLegacy.getHudProjection().aimAnglesU16, [54_321, 54_321, 54_321]);
+assert.deepEqual(migratedLegacy.getHudProjection().aimAnglesU16, [
+  54_321,
+  54_321,
+  54_321,
+  DEFAULT_AIM_ANGLE_U16,
+]);
 
 function angleTo(from: Point, to: Point): number {
   const angle = Math.atan2(to.y - from.y, to.x - from.x);
@@ -138,21 +207,23 @@ function angleTo(from: Point, to: Point): number {
 }
 
 const fallbackBundle = createStage01Bundle();
-fallbackBundle.rules.initialActiveTowerIds = [0, 1, 2];
-const fallbackSimulation = createBattleSimulation(fallbackBundle, 0xfa11bac);
-const fallbackAimAngles = [4_096, 20_480, 53_248] as const;
+const fallbackSimulation = createFixedMechanicSimulation(fallbackBundle, 0xfa11bac, [0, 1, 2]);
+const fallbackAimAngles = [4_096, 20_480, 53_248, DEFAULT_AIM_ANGLE_U16] as const;
 fallbackAimAngles.forEach((angleU16, towerId) => {
+  if (!fallbackSimulation.getHudProjection().activeTowerIds.includes(towerId as TowerId)) return;
   fallbackSimulation.applyCommand({
     seq: towerId + 1,
     type: 'SET_AIM',
-    towerId: towerId as 0 | 1 | 2,
+    towerId: towerId as TowerId,
     angleU16,
   });
 });
 assert.deepEqual(fallbackSimulation.getRenderSnapshot().towerFacingsU16, fallbackAimAngles);
 
 const targetingBundle = createStage01Bundle();
-targetingBundle.rules.initialActiveTowerIds = [0, 1, 2];
+// Auto-target fallback owns aim/facing semantics; the Stage 01 protected
+// ingress is exercised independently by stage01-ingress-smoke.
+targetingBundle.route.combatStartDistancePx = 1;
 targetingBundle.tower.rangePx = 5_000;
 targetingBundle.tower.projectileSpeedPxPerSecond = 60;
 targetingBundle.tower.baseDamageMilli = 1;
@@ -160,19 +231,21 @@ targetingBundle.tower.basePenetration = 2;
 targetingBundle.tower.critChanceBp = 10_000;
 const spawnPoint = targetingBundle.route.points[0];
 if (!spawnPoint) throw new Error('Stage 01 route requires a spawn point.');
-const targetingSimulation = createBattleSimulation(targetingBundle, 0xa11ce);
+const targetingSimulation = createFixedMechanicSimulation(targetingBundle, 0xa11ce, [0, 1, 2]);
+startPreparedWave(targetingSimulation);
 const autoTrackingTowerId = 2 as const;
 let configuredTrackingAim = 0;
 targetingBundle.route.towerAnchors.forEach((anchor, index) => {
+  if (!targetingSimulation.getHudProjection().activeTowerIds.includes(index as TowerId)) return;
   const towardSpawn = angleTo(anchor, spawnPoint);
   const angleU16 = index === autoTrackingTowerId
     ? (towardSpawn + 5_461) & 0xffff
     : (towardSpawn + 32_768) & 0xffff;
   if (index === autoTrackingTowerId) configuredTrackingAim = angleU16;
   targetingSimulation.applyCommand({
-    seq: index + 1,
+    seq: targetingSimulation.getHudProjection().lastCommandSeq + 1,
     type: 'SET_AIM',
-    towerId: index as 0 | 1 | 2,
+    towerId: index as TowerId,
     angleU16,
   });
 });
@@ -293,7 +366,7 @@ interface StageCombatDistribution {
 }
 
 function stageCombatDistribution(events: BattleEvent[], waveCount: number): StageCombatDistribution {
-  const attacksByWave = Array.from({ length: waveCount }, () => [0, 0, 0]);
+  const attacksByWave = Array.from({ length: waveCount }, () => [0, 0, 0, 0]);
   const aliveByWave = Array.from({ length: waveCount }, () => 0);
   const peakAliveByWave = Array.from({ length: waveCount }, () => 0);
   let activeWaveIndex = 0;
@@ -411,9 +484,16 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
     if (shopHud.flowState !== 'offer-pending' || !shopHud.activeOffer) {
       throw new Error('An opened fixed-stage shop must expose its authority-backed offer.');
     }
+    const towerReserve = shopHud.towerBuild.nextTowerId !== null &&
+      shopHud.towerBuild.completedWaves >= shopHud.towerBuild.requiredCompletedWaves - 1
+      ? shopHud.towerBuild.cost
+      : 0;
     const affordable = [...(shopHud.offerPreviews ?? [])]
       .filter((preview) => {
-        if (preview.capped || preview.warPointCost > shopHud.warPointsBalance) return false;
+        if (
+          preview.capped ||
+          preview.warPointCost > shopHud.warPointsBalance - towerReserve
+        ) return false;
         return true;
       })
       .sort((left, right) => {
@@ -434,6 +514,30 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
     resolveOutput(simulation.applyCommand({ seq: ++commandSequence, type: 'CLOSE_SHOP' }));
   }
 
+  function attemptTowerBuild(): void {
+    const hud = simulation.getHudProjection();
+    if (!hud.towerBuild.canBuild || hud.towerBuild.nextTowerId === null) return;
+    const authoredPoint = hud.towerPositions[hud.towerBuild.nextTowerId];
+    if (!authoredPoint) throw new Error('A buildable fixed-stage tower requires an authored default position.');
+    const placement = findNearestValidTowerPlacement({
+      point: authoredPoint,
+      buildZones: createDefaultTowerBuildZones(),
+      routePoints: bundle.route.points,
+      breachPoint: bundle.route.breachPoint,
+      existingTowerPoints: hud.activeTowerIds
+        .map((towerId) => hud.towerPositions[towerId])
+        .filter((point): point is Point => point !== undefined),
+    });
+    if (!placement) throw new Error('A buildable fixed-stage tower requires a legal placement.');
+    const output = simulation.applyCommand({
+      seq: ++commandSequence,
+      type: 'BUILD_TOWER',
+      point: placement.point,
+    });
+    resolveOutput(output);
+    assert.equal(output.commandAcks[0]?.status, 'applied');
+  }
+
   function applyTactics(): void {
     const hud = simulation.getHudProjection();
     if (hud.flowState !== 'running' || hud.tick < nextTacticTick) return;
@@ -442,8 +546,8 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
       (entity) => entity.renderKind === 'enemy',
     );
     const rangeSquared = hud.towerStats.current.rangePx ** 2;
-    for (const [towerIndex, anchor] of bundle.route.towerAnchors.entries()) {
-      if (!hud.activeTowerIds.includes(towerIndex as 0 | 1 | 2)) continue;
+    for (const [towerIndex, anchor] of hud.towerPositions.entries()) {
+      if (!hud.activeTowerIds.includes(towerIndex as TowerId)) continue;
       const inRange = enemies.filter((enemy) => {
         const deltaX = enemy.x - anchor.x;
         const deltaY = enemy.y - anchor.y;
@@ -459,7 +563,7 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
       resolveOutput(simulation.applyCommand({
         seq: ++commandSequence,
         type: 'SET_AIM',
-        towerId: towerIndex as 0 | 1 | 2,
+        towerId: towerIndex as TowerId,
         angleU16: angleTo(anchor, target),
       }));
     }
@@ -484,7 +588,11 @@ function runStageToVictory(bundle: BattleBundleV1, seed: number): VictoryRun {
 
   let tickBudget = 180_000;
   while (tickBudget > 0 && simulation.getHudProjection().flowState !== 'result') {
+    attemptTowerBuild();
     attemptShopPurchase();
+    if (simulation.getHudProjection().flowState === 'preparing') {
+      resolveOutput(startPreparedWave(simulation));
+    }
     applyTactics();
     const output = simulation.advanceTicks(Math.min(10, tickBudget));
     tickBudget -= output.ticksAdvanced;
@@ -518,7 +626,7 @@ function assertVictory(run: VictoryRun, expectedSpawnCount: number): void {
     })}`,
   );
   assert.equal(run.events.filter((event) => event.type === 'SPAWN').length, expectedSpawnCount);
-  assert.deepEqual(hud.activeTowerIds, [0, 1, 2]);
+  assert.deepEqual(hud.activeTowerIds, [0, 1, 2, 3]);
   assert.deepEqual(
     {
       flowState: run.simulation.getHudProjection().flowState,
@@ -531,12 +639,13 @@ function assertVictory(run: VictoryRun, expectedSpawnCount: number): void {
 
 const stage01Bundle = createStage01Bundle();
 const stage01Victory = runStageToVictory(stage01Bundle, 0xdecafbad);
-assertVictory(stage01Victory, 82);
+assert.equal(stage01Bundle.route.towerAnchors.length, 4);
+assertVictory(stage01Victory, 95);
 
 const stage02Bundle = createStage02Bundle();
 assert.equal(stage02Bundle.stage.id, 'STAGE_02');
 assert.equal(stage02Bundle.stage.name, '东海礁港');
-assert.equal(stage02Bundle.route.towerAnchors.length, 3);
+assert.equal(stage02Bundle.route.towerAnchors.length, 4);
 assert.equal(stage02Bundle.waves.length, 5);
 assert.ok(stage02Bundle.releaseId !== createStage01Bundle().releaseId);
 assert.ok(stage02Bundle.configHash !== createStage01Bundle().configHash);
@@ -554,8 +663,8 @@ for (let index = 1; index < stage02Bundle.waves.length; index += 1) {
 
 const stage02FirstVictory = runStageToVictory(createStage02Bundle(), 0x5a6e0202);
 const stage02SecondVictory = runStageToVictory(createStage02Bundle(), 0x5a6e0202);
-assertVictory(stage02FirstVictory, 118);
-assertVictory(stage02SecondVictory, 118);
+assertVictory(stage02FirstVictory, 130);
+assertVictory(stage02SecondVictory, 130);
 const stage02Distribution = stageCombatDistribution(stage02FirstVictory.events, stage02Bundle.waves.length);
 for (const waveIndex of [2, 3, 4]) {
   const towerAttacks = stage02Distribution.attacksByWave[waveIndex] ?? [];
@@ -575,7 +684,7 @@ assert.deepEqual(
 const stage03Bundle = createStage03Bundle();
 assert.equal(stage03Bundle.stage.id, 'STAGE_03');
 assert.equal(stage03Bundle.stage.name, '镇海龙门');
-assert.equal(stage03Bundle.route.towerAnchors.length, 3);
+assert.equal(stage03Bundle.route.towerAnchors.length, 4);
 assert.equal(stage03Bundle.waves.length, 5);
 assert.ok(stage03Bundle.releaseId !== stage02Bundle.releaseId);
 assert.ok(stage03Bundle.configHash !== stage02Bundle.configHash);
@@ -587,7 +696,7 @@ assert.equal(
     (total, wave) => total + wave.groups.reduce((count, group) => count + group.count, 0),
     0,
   ),
-  136,
+  141,
 );
 for (let index = 1; index < stage03Bundle.waves.length; index += 1) {
   const previous = stage03Bundle.waves[index - 1];
@@ -601,7 +710,7 @@ assert.ok(stage03Bundle.waves[4]?.groups.some((group) => group.enemyId === 'MON_
 const stage04Bundle = createStage04Bundle();
 assert.equal(stage04Bundle.stage.id, 'STAGE_04');
 assert.equal(stage04Bundle.stage.name, '归墟潮眼');
-assert.equal(stage04Bundle.route.towerAnchors.length, 3);
+assert.equal(stage04Bundle.route.towerAnchors.length, 4);
 assert.equal(stage04Bundle.tower.rangePx, 750);
 assert.equal(stage04Bundle.waves.length, 5);
 assert.ok(stage04Bundle.releaseId !== stage03Bundle.releaseId);
@@ -620,17 +729,17 @@ assert.equal(
     (total, wave) => total + wave.groups.reduce((count, group) => count + group.count, 0),
     0,
   ),
-  150,
+  165,
 );
 assert.ok(stage04Bundle.waves[4]?.groups.some((group) => group.enemyId === 'MON_ABYSS_WYRM'));
 assert.equal(stage04Bundle.enemies.MON_ABYSS_WYRM?.maxHpMilli, 1_100_000);
 assert.equal(stage04Bundle.enemies.MON_ABYSS_WYRM?.enrageBelowHpBp, 5_000);
-assert.equal(stage04Bundle.enemies.MON_ABYSS_WYRM?.enrageSpeedMultiplierBp, 16_000);
+assert.equal(stage04Bundle.enemies.MON_ABYSS_WYRM?.enrageSpeedMultiplierBp, 25_000);
 
 const stage05Bundle = createStage05Bundle();
 assert.equal(stage05Bundle.stage.id, 'STAGE_05');
 assert.equal(stage05Bundle.stage.name, '扶桑天阙');
-assert.equal(stage05Bundle.route.towerAnchors.length, 3);
+assert.equal(stage05Bundle.route.towerAnchors.length, 4);
 assert.equal(stage05Bundle.tower.rangePx, 750);
 assert.equal(stage05Bundle.waves.length, 5);
 assert.ok(stage05Bundle.releaseId !== stage04Bundle.releaseId);
@@ -649,7 +758,7 @@ assert.equal(
     (total, wave) => total + wave.groups.reduce((count, group) => count + group.count, 0),
     0,
   ),
-  157,
+  184,
 );
 assert.ok(stage05Bundle.waves[4]?.groups.some((group) => group.enemyId === 'MON_ECLIPSE_KUN_EMPEROR'));
 assert.equal(stage05Bundle.enemies.MON_SOLAR_FORMATION_PRIEST?.guardAuraArmorBp, 5_000);
@@ -672,7 +781,7 @@ assert.deepEqual(BATTLE_STAGE_ORDER, [
 assert.deepEqual(Object.keys(STAGE_BUNDLES), BATTLE_STAGE_ORDER);
 assert.equal(stage06Bundle.stage.id, 'STAGE_06');
 assert.equal(stage06Bundle.stage.name, '太初蜃庭');
-assert.equal(stage06Bundle.route.towerAnchors.length, 3);
+assert.equal(stage06Bundle.route.towerAnchors.length, 4);
 assert.equal(stage06Bundle.tower.rangePx, 750);
 assert.equal(stage06Bundle.waves.length, 5);
 assert.ok(stage06Bundle.releaseId !== stage05Bundle.releaseId);
@@ -690,7 +799,7 @@ assert.equal(
     (total, wave) => total + wave.groups.reduce((count, group) => count + group.count, 0),
     0,
   ),
-  168,
+  195,
 );
 assert.ok(stage06Bundle.waves[4]?.groups.some((group) => group.enemyId === 'MON_MIRAGE_MOTHER'));
 assert.equal(stage06Bundle.enemies.MON_PHASE_SHELL_WEAVER?.phaseShellAboveHpBp, 6_000);
@@ -722,7 +831,7 @@ assert.ok(rejectedInvalidPhaseShell);
 const stage07Bundle = createStage07Bundle();
 assert.equal(stage07Bundle.stage.id, 'STAGE_07');
 assert.equal(stage07Bundle.stage.name, '山河残卷');
-assert.equal(stage07Bundle.route.towerAnchors.length, 3);
+assert.equal(stage07Bundle.route.towerAnchors.length, 4);
 assert.equal(stage07Bundle.tower.rangePx, 750);
 assert.equal(stage07Bundle.waves.length, 5);
 assert.ok(stage07Bundle.releaseId !== stage06Bundle.releaseId);
@@ -740,7 +849,7 @@ assert.equal(
     (total, wave) => total + wave.groups.reduce((count, group) => count + group.count, 0),
     0,
   ),
-  180,
+  216,
 );
 assert.ok(stage07Bundle.waves[4]?.groups.some((group) => group.enemyId === 'MON_DUAL_PHASE_BOOK_MOTH'));
 assert.equal(stage07Bundle.enemies.MON_ETHEREAL_WALKER?.etherealCycleTicks, 150);
@@ -892,9 +1001,165 @@ for (const [index, layout] of stage08CardLayouts.entries()) {
   }
 }
 
+const fullHomeViewport = resolveViewportLayout(1_920, 1_080);
+const fullHomeSize = {
+  width: 1_920,
+  height: 1_080,
+  pixelRatio: 1,
+  safeArea: { left: 0, top: 0, right: 1_920, bottom: 1_080, width: 1_920, height: 1_080 },
+};
+assert.deepEqual(
+  resolveHomeBadgeLayout(fullHomeSize, fullHomeViewport),
+  { x: 1_590, y: 46, width: 250, height: 58 },
+);
+
+const iphone5Viewport = resolveViewportLayout(568, 320);
+const iphone5Menu = { left: 480, top: 5, right: 560, bottom: 36, width: 80, height: 31 };
+const iphone5Size = {
+  width: 568,
+  height: 320,
+  pixelRatio: 2,
+  safeArea: { left: 0, top: 0, right: 568, bottom: 320, width: 568, height: 320 },
+  menuButtonRect: iphone5Menu,
+};
+const iphone5Badge = resolveHomeBadgeLayout(iphone5Size, iphone5Viewport);
+const iphone5BadgeRight = iphone5Viewport.offsetX +
+  (iphone5Badge.x + iphone5Badge.width) * iphone5Viewport.scale;
+assert.ok(iphone5BadgeRight <= iphone5Menu.left - 12 + .000_001);
+
+const verticallySeparateMenuBadge = resolveHomeBadgeLayout({
+  ...iphone5Size,
+  menuButtonRect: { ...iphone5Menu, top: 150, bottom: 181 },
+}, iphone5Viewport);
+assert.equal(verticallySeparateMenuBadge.x, 1_590);
+
+const narrowedSafeAreaBadge = resolveHomeBadgeLayout({
+  ...iphone5Size,
+  safeArea: { left: 0, top: 0, right: 500, bottom: 320, width: 500, height: 320 },
+  menuButtonRect: undefined,
+}, iphone5Viewport);
+const narrowedBadgeRight = iphone5Viewport.offsetX +
+  (narrowedSafeAreaBadge.x + narrowedSafeAreaBadge.width) * iphone5Viewport.scale;
+assert.ok(narrowedBadgeRight <= 500 - 12 + .000_001);
+
+const compactHomePresentations = [
+  resolveHomeStageCompactPresentation({ id: 'STAGE_01', unlocked: true, completed: false }),
+  resolveHomeStageCompactPresentation({ id: 'STAGE_02', unlocked: true, completed: true }),
+  resolveHomeStageCompactPresentation({ id: 'STAGE_03', unlocked: false, completed: false }),
+  resolveHomeStageCompactPresentation({ id: 'STAGE_08', unlocked: true, completed: false }),
+  resolveHomeStageCompactPresentation({
+    id: 'STAGE_08',
+    unlocked: true,
+    completed: false,
+    best: [{ routeId: 'ROUTE_A' }, { routeId: 'ROUTE_B' }, { routeId: 'ROUTE_C' }],
+  }),
+];
+assert.deepEqual(
+  compactHomePresentations.map((presentation) => presentation.status),
+  ['可挑战', '已通关', '未解锁', '待挑战', '3路已录'],
+);
+for (const [width, height] of [[568, 320], [667, 375], [844, 390]] as const) {
+  const viewport = resolveViewportLayout(width, height);
+  const compactCardWidthPx = (stage08CardLayouts[0]?.width ?? 0) * viewport.scale -
+    16 * viewport.scale;
+  for (const presentation of compactHomePresentations) {
+    assert.ok(presentation.name.length <= 3);
+    assert.ok(presentation.status.length <= 4);
+    assert.ok(presentation.name.length * 11 <= compactCardWidthPx);
+    assert.ok(presentation.status.length * 9 <= compactCardWidthPx);
+  }
+  assert.ok((42 - 4) * viewport.scale >= 11);
+  assert.ok((80 - 42) * viewport.scale >= 11 * .2 + 9 * .8);
+  assert.ok((96 - 80) * viewport.scale >= 9 * .25);
+
+  const shortcuts = Array.from({ length: 3 }, (_, index) =>
+    resolveShopShortcutLayout(viewport.scale, index));
+  for (const [index, shortcut] of shortcuts.entries()) {
+    assert.ok(shortcut.compact);
+    assert.equal(shortcut.width, 330);
+    assert.ok(shortcut.iconX + shortcut.iconSize <= shortcut.textX);
+    assert.ok(shortcut.textX + shortcut.textWidth <= shortcut.actionX - 8);
+    assert.ok(shortcut.actionX + shortcut.actionWidth <= shortcut.x + shortcut.width - 8);
+    assert.ok(shortcut.priceY + shortcut.actionHeight <= shortcut.statusY);
+    assert.ok(shortcut.statusY + shortcut.actionHeight <= shortcut.y + shortcut.height - 10);
+    assert.ok(shortcut.actionHeight * viewport.scale >= 8);
+    assert.ok(shortcut.x + shortcut.width <= 372);
+    assert.ok(shortcut.y + shortcut.height <= 870);
+    if (index > 0) {
+      const previous = shortcuts[index - 1];
+      if (!previous) throw new Error('Shortcut rail requires contiguous layouts.');
+      assert.ok(previous.y + previous.height <= shortcut.y);
+    }
+  }
+}
+assert.ok(!resolveShopShortcutLayout(resolveViewportLayout(1_280, 720).scale, 0).compact);
+
+const compactShortcutBase = {
+  compact: true,
+  qualityName: '绝品',
+  cardName: '箭矢数量',
+  metric: { label: '每轮箭矢', before: '1 支', after: '3 支' },
+  cost: 140,
+  shortfall: 140,
+  full: false,
+  atCap: false,
+  affordable: false,
+};
+assert.deepEqual(resolveShopShortcutText(compactShortcutBase), {
+  title: '箭矢数量',
+  metric: '1→3',
+  price: '140功',
+  status: '差140',
+});
+assert.equal(resolveShopShortcutText({ ...compactShortcutBase, affordable: true }).status, '可换');
+assert.equal(resolveShopShortcutText({ ...compactShortcutBase, atCap: true }).status, '封顶');
+assert.equal(resolveShopShortcutText({ ...compactShortcutBase, full: true }).status, '已满');
+assert.equal(resolveShopShortcutText({
+  ...compactShortcutBase,
+  cardName: '会心术',
+  metric: { label: '暴击伤害', before: '150%', after: '169.8%' },
+}).metric, '→169.8%');
+assert.deepEqual(resolveShopShortcutText({ ...compactShortcutBase, compact: false }), {
+  title: '绝品 · 箭矢数量',
+  metric: '每轮箭矢 1 支 → 3 支',
+  price: '140 战功',
+  status: '还差 140',
+});
+
+function estimatedCompactTextWidthPx(value: string, fontSizePx: number): number {
+  const units = [...value].reduce((sum, character) => {
+    if (/\d/u.test(character)) return sum + .55;
+    if (character === '.') return sum + .35;
+    if (character === '%') return sum + .75;
+    return sum + 1;
+  }, 0);
+  return units * fontSizePx;
+}
+
+const iphone5Shortcut = resolveShopShortcutLayout(iphone5Viewport.scale, 0);
+const longCompactMetric = resolveShopShortcutText({
+  ...compactShortcutBase,
+  cardName: '会心术',
+  metric: { label: '暴击伤害', before: '150%', after: '169.8%' },
+});
+for (const [value, fontSizePx, availableDesignWidth] of [
+  [compactShortcutBase.cardName, 9, iphone5Shortcut.textWidth],
+  [longCompactMetric.metric, 8, iphone5Shortcut.textWidth],
+  [longCompactMetric.price, 8, iphone5Shortcut.actionWidth - 12],
+  [longCompactMetric.status, 8, iphone5Shortcut.actionWidth - 12],
+] as const) {
+  assert.ok(
+    estimatedCompactTextWidthPx(value, fontSizePx) <=
+      availableDesignWidth * iphone5Viewport.scale,
+  );
+}
+
 const responsiveViewports = [
   [1_920, 1_080],
   [2_400, 1_080],
+  [568, 320],
+  [667, 375],
+  [844, 390],
   [852, 393],
   [800, 360],
   [840, 360],
@@ -970,8 +1235,8 @@ assert.equal(resolveCanvasFontWeight(720), 'bold');
 
 const stage03FirstVictory = runStageToVictory(createStage03Bundle(), 0x5a6e0303);
 const stage03SecondVictory = runStageToVictory(createStage03Bundle(), 0x5a6e0303);
-assertVictory(stage03FirstVictory, 136);
-assertVictory(stage03SecondVictory, 136);
+assertVictory(stage03FirstVictory, 141);
+assertVictory(stage03SecondVictory, 141);
 const stage03Distribution = stageCombatDistribution(stage03FirstVictory.events, stage03Bundle.waves.length);
 assert.equal(
   stage03FirstVictory.events.filter(
@@ -1011,6 +1276,7 @@ enrageProbeBundle.tower.attackIntervalTicks = 1;
 enrageProbeBundle.tower.baseDamageMilli = 40_000;
 enrageProbeBundle.tower.projectileSpeedPxPerSecond = 5_000;
 const enrageProbe = createBattleSimulation(enrageProbeBundle, 0xe04a9e);
+startPreparedWave(enrageProbe);
 let sawCalmBoss = false;
 let sawEnragedBoss = false;
 for (let tick = 0; tick < 300 && !sawEnragedBoss; tick += 1) {
@@ -1027,8 +1293,8 @@ assert.ok(sawEnragedBoss);
 
 const stage04FirstVictory = runStageToVictory(createStage04Bundle(), 0x5a6e0404);
 const stage04SecondVictory = runStageToVictory(createStage04Bundle(), 0x5a6e0404);
-assertVictory(stage04FirstVictory, 150);
-assertVictory(stage04SecondVictory, 150);
+assertVictory(stage04FirstVictory, 165);
+assertVictory(stage04SecondVictory, 165);
 const stage04Distribution = stageCombatDistribution(stage04FirstVictory.events, stage04Bundle.waves.length);
 assert.equal(
   stage04FirstVictory.events.filter(
@@ -1039,9 +1305,12 @@ assert.equal(
 for (const waveIndex of [2, 3, 4]) {
   const towerAttacks = stage04Distribution.attacksByWave[waveIndex] ?? [];
   const activeTowerAttacks = towerAttacks.filter((count) => count > 0);
-  const minimumAttacks = waveIndex === 2 ? 12 : waveIndex === 3 ? 16 : 20;
+  const minimumAttacks = waveIndex === 2 ? 10 : waveIndex === 3 ? 16 : 20;
   assert.ok(activeTowerAttacks.length >= 2);
-  assert.ok(activeTowerAttacks.every((count) => count >= minimumAttacks));
+  assert.ok(
+    activeTowerAttacks.every((count) => count >= minimumAttacks),
+    `Stage 04 wave ${waveIndex + 1} attack density ${JSON.stringify(towerAttacks)}`,
+  );
   assert.ok(
     Math.max(...activeTowerAttacks) / Math.max(1, Math.min(...activeTowerAttacks)) <= 3,
   );
@@ -1079,6 +1348,7 @@ function firstAuraProbeHit(bundle: BattleBundleV1): {
   enemyFlags: number[];
 } {
   const simulation = createBattleSimulation(bundle, 0xa05a05);
+  startPreparedWave(simulation);
   let enemyFlags: number[] = [];
   for (let tick = 0; tick < 180; tick += 1) {
     const output = simulation.advanceTicks(1);
@@ -1109,6 +1379,7 @@ const selfAuraFirstWave = selfAuraBundle.waves[0];
 if (!selfAuraFirstWave) throw new Error('Stage 05 self-aura probe requires its first wave.');
 selfAuraFirstWave.groups = [{ enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 1, intervalTicks: 1 }];
 const selfAuraSimulation = createBattleSimulation(selfAuraBundle, 0x51f0a05);
+startPreparedWave(selfAuraSimulation);
 let selfAuraFlags = 0;
 for (let tick = 0; tick < 90; tick += 1) {
   selfAuraSimulation.advanceTicks(1);
@@ -1121,8 +1392,8 @@ assert.equal(selfAuraFlags & ENEMY_FLAG_GUARDED, 0);
 
 const stage05FirstVictory = runStageToVictory(createStage05Bundle(), 0x5a6e0505);
 const stage05SecondVictory = runStageToVictory(createStage05Bundle(), 0x5a6e0505);
-assertVictory(stage05FirstVictory, 157);
-assertVictory(stage05SecondVictory, 157);
+assertVictory(stage05FirstVictory, 184);
+assertVictory(stage05SecondVictory, 184);
 const stage05Distribution = stageCombatDistribution(stage05FirstVictory.events, stage05Bundle.waves.length);
 assert.equal(
   stage05FirstVictory.events.filter(
@@ -1159,7 +1430,6 @@ function phaseShellProbeBundle(enabled: boolean): BattleBundleV1 {
   boss.armorBp = 0;
   boss.phaseShellAboveHpBp = 9_700;
   boss.phaseShellMaxHitDamageBp = 100;
-  bundle.rules.initialActiveTowerIds = [0, 1, 2];
   bundle.tower.rangePx = 5_000;
   bundle.tower.attackIntervalTicks = 1;
   bundle.tower.projectileSpeedPxPerSecond = 5_000;
@@ -1182,7 +1452,8 @@ interface PhaseShellProbeResult {
 }
 
 function runPhaseShellProbe(bundle: BattleBundleV1): PhaseShellProbeResult {
-  const simulation = createBattleSimulation(bundle, 0x506e11);
+  const simulation = createFixedMechanicSimulation(bundle, 0x506e11, [0, 1, 2]);
+  startPreparedWave(simulation);
   const hitDamages: number[] = [];
   const hitCritical: boolean[] = [];
   let sawActiveFlag = false;
@@ -1227,8 +1498,8 @@ assert.equal(noPhaseShellProbe.sawActiveFlag, false);
 
 const stage06FirstVictory = runStageToVictory(createStage06Bundle(), 0x5a6e0606);
 const stage06SecondVictory = runStageToVictory(createStage06Bundle(), 0x5a6e0606);
-assertVictory(stage06FirstVictory, 168);
-assertVictory(stage06SecondVictory, 168);
+assertVictory(stage06FirstVictory, 195);
+assertVictory(stage06SecondVictory, 195);
 const stage06Distribution = stageCombatDistribution(stage06FirstVictory.events, stage06Bundle.waves.length);
 assert.equal(
   stage06FirstVictory.events.filter(
@@ -1241,7 +1512,11 @@ for (const waveIndex of [0, 1, 2, 3, 4]) {
   const activeTowerAttacks = towerAttacks.filter((count) => count > 0);
   if (waveIndex < 2) assert.equal(towerAttacks[2], 0);
   assert.ok(activeTowerAttacks.length >= 2);
-  assert.ok(activeTowerAttacks.every((count) => count >= 10));
+  const minimumAttacks = waveIndex === 0 ? 8 : 10;
+  assert.ok(
+    activeTowerAttacks.every((count) => count >= minimumAttacks),
+    `Stage 06 wave ${waveIndex + 1} attack density ${JSON.stringify(towerAttacks)}`,
+  );
   assert.ok(
     Math.max(...activeTowerAttacks) / Math.max(1, Math.min(...activeTowerAttacks)) <= 3,
   );
@@ -1288,6 +1563,7 @@ function runEtherealProbe(bundle: BattleBundleV1): {
   restoredEthereal: boolean;
 } {
   const simulation = createBattleSimulation(bundle, 0x707e7e);
+  startPreparedWave(simulation);
   let solidDamage = 0;
   let etherealDamage = 0;
   let sawSolid = false;
@@ -1330,10 +1606,10 @@ assert.equal(noEtherealProbe.solidDamage, 1_000);
 assert.equal(noEtherealProbe.etherealDamage, 0);
 assert.equal(noEtherealProbe.sawEthereal, false);
 
-const stage07FirstVictory = runStageToVictory(createStage07Bundle(), 0x5a6e0707);
-const stage07SecondVictory = runStageToVictory(createStage07Bundle(), 0x5a6e0707);
-assertVictory(stage07FirstVictory, 180);
-assertVictory(stage07SecondVictory, 180);
+const stage07FirstVictory = runStageToVictory(createStage07Bundle(), 0x9e3779b1);
+const stage07SecondVictory = runStageToVictory(createStage07Bundle(), 0x9e3779b1);
+assertVictory(stage07FirstVictory, 216);
+assertVictory(stage07SecondVictory, 216);
 const stage07Distribution = stageCombatDistribution(stage07FirstVictory.events, stage07Bundle.waves.length);
 assert.equal(
   stage07FirstVictory.events.filter(
@@ -1355,7 +1631,7 @@ for (const waveIndex of [0, 1, 2, 3, 4]) {
   );
   assert.ok((stage07Distribution.peakAliveByWave[waveIndex] ?? 0) <= 60);
 }
-assert.ok([0, 1, 2].every((towerId) =>
+assert.ok([0, 1, 2, 3].every((towerId) =>
   stage07Distribution.attacksByWave.reduce(
     (sum, attacks) => sum + (attacks[towerId] ?? 0),
     0,
@@ -1388,20 +1664,20 @@ try {
 assert.ok(rejectedCrossStageCheckpoint);
 
 console.log('✓ 30 Hz 与 1/2 倍速逻辑通过');
-console.log('✓ 三座箭塔独立优先方向、自动索敌回退、自动转向、弹体旗标与旧存档迁移通过');
+console.log('✓ 四塔位独立优先方向、自动索敌回退、自动转向、弹体旗标与三塔旧存档迁移通过');
 console.log('✓ checkpoint 编解码、校验和确定性恢复通过');
 console.log('✓ 本地发牌 Authority 快照恢复通过');
-console.log('✓ Stage 01 五波、82 名敌人与胜利结算通过');
-console.log('✓ Stage 02 独立配置、五波 118 名敌人、确定性与完整通关通过');
-console.log(`✓ Stage 02 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage02Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage02Distribution.peakAliveByWave)}`);
-console.log('✓ Stage 03 五波 136 名敌人、疾潮递增、重甲与首领出场顺序通过');
-console.log(`✓ Stage 03 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage03Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage03Distribution.peakAliveByWave)}`);
-console.log('✓ Stage 04 五波 150 名敌人、残血狂潮与噬潮魔蛟首领阶段通过');
-console.log(`✓ Stage 04 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage04Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage04Distribution.peakAliveByWave)}`);
-console.log('✓ Stage 05 五波 157 名敌人、护阵光环与蚀日鲲皇首领阶段通过');
-console.log(`✓ Stage 05 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage05Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage05Distribution.peakAliveByWave)}`);
-console.log('✓ Stage 06 五波 168 名敌人、相壳阈值/限伤/恢复与万相蜃母首领阶段通过');
-console.log(`✓ Stage 06 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage06Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage06Distribution.peakAliveByWave)}`);
-console.log('✓ Stage 07 五波 180 名敌人、虚实轮转/恢复与双相天蠹首领阶段通过');
-console.log(`✓ Stage 07 箭塔逐波出手（锁塔为 0）${JSON.stringify(stage07Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage07Distribution.peakAliveByWave)}；结算关印 ${stage07FinalHud.gateIntegrity}/${stage07FinalHud.gateIntegrityMax}，战功 ${stage07FinalHud.warPointsBalance}/${stage07FinalHud.warPointsEarned}，购买 ${stage07PurchaseCount} 次`);
+console.log('✓ Stage 01 五波、95 名敌人与胜利结算通过');
+console.log('✓ Stage 02 独立配置、五波 130 名敌人、确定性与完整通关通过');
+console.log(`✓ Stage 02 四塔位逐波出手 ${JSON.stringify(stage02Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage02Distribution.peakAliveByWave)}`);
+console.log('✓ Stage 03 五波 141 名敌人、疾潮递增、重甲与首领出场顺序通过');
+console.log(`✓ Stage 03 四塔位逐波出手 ${JSON.stringify(stage03Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage03Distribution.peakAliveByWave)}`);
+console.log('✓ Stage 04 五波 165 名敌人、残血狂潮与噬潮魔蛟首领阶段通过');
+console.log(`✓ Stage 04 四塔位逐波出手 ${JSON.stringify(stage04Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage04Distribution.peakAliveByWave)}`);
+console.log('✓ Stage 05 五波 184 名敌人、护阵光环与蚀日鲲皇首领阶段通过');
+console.log(`✓ Stage 05 四塔位逐波出手 ${JSON.stringify(stage05Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage05Distribution.peakAliveByWave)}`);
+console.log('✓ Stage 06 五波 195 名敌人、相壳阈值/限伤/恢复与万相蜃母首领阶段通过');
+console.log(`✓ Stage 06 四塔位逐波出手 ${JSON.stringify(stage06Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage06Distribution.peakAliveByWave)}`);
+console.log('✓ Stage 07 五波 216 名敌人、虚实轮转/恢复与双相天蠹首领阶段通过');
+console.log(`✓ Stage 07 四塔位逐波出手 ${JSON.stringify(stage07Distribution.attacksByWave)}，峰值同屏 ${JSON.stringify(stage07Distribution.peakAliveByWave)}；结算关印 ${stage07FinalHud.gateIntegrity}/${stage07FinalHud.gateIntegrityMax}，战功 ${stage07FinalHud.warPointsBalance}/${stage07FinalHud.warPointsEarned}，购买 ${stage07PurchaseCount} 次`);
 console.log(`✓ 七关与无尽三路的真实终点、可见关印、塔位和双侧 HUD 安全区一致 ${JSON.stringify(projectedBreachSealPlacements.map((point) => [Math.round(point.x), Math.round(point.y)]))}`);

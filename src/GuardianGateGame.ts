@@ -26,12 +26,17 @@ import {
   type HudProjectionV1,
   type RenderSnapshotV1,
   TICKS_PER_SECOND,
+  type TowerCardPreviewV1,
   type TowerId,
 } from './core/contracts';
 import {
   LocalPracticeAuthority,
   type LocalAuthoritySnapshotV1,
 } from './core/local-authority';
+import {
+  createDefaultTowerBuildZones,
+  validateTowerPlacement,
+} from './core/tower-placement';
 import {
   checkpointChecksum,
   compareEndlessRecords,
@@ -49,6 +54,7 @@ import {
   CanvasRenderer,
   type DesignPoint,
   type InteractionId,
+  type TowerPlacementRenderState,
   type TowerMetricRenderState,
 } from './render/CanvasRenderer';
 
@@ -63,7 +69,7 @@ const DAMAGE_METRIC_WINDOW_TICKS = TICKS_PER_SECOND * 3;
 
 interface TowerDamageBucket {
   tick: number;
-  damageByTowerMilli: [number, number, number];
+  damageByTowerMilli: [number, number, number, number];
 }
 
 export class GuardianGateGame {
@@ -99,6 +105,9 @@ export class GuardianGateGame {
   private aimPoint?: DesignPoint;
   private aimDragOrigin?: DesignPoint;
   private aimDragActivated = false;
+  private towerPlacement?: TowerPlacementRenderState;
+  private towerPlacementDragOrigin?: DesignPoint;
+  private towerPlacementDragActivated = false;
   private towerDamageBuckets: TowerDamageBucket[] = [];
   private strategyPanelOpen = false;
   private strategyPanelResumeOnClose = false;
@@ -148,10 +157,14 @@ export class GuardianGateGame {
 
     if (this.screen === 'battle' && this.simulation) {
       try {
-        if (this.hud?.flowState === 'running') {
+        if (
+          this.hud?.flowState === 'running' ||
+          (this.hud?.flowState === 'preparing' && !this.towerPlacement)
+        ) {
           this.processOutput(this.simulation.advanceWallTime(elapsed));
         }
         this.refreshBattleProjection();
+        this.ensureShopOfferProjection();
         if (this.hud && this.hud.tick - this.lastSavedTick >= SAVE_INTERVAL_TICKS) {
           this.saveBattle();
         }
@@ -204,6 +217,7 @@ export class GuardianGateGame {
         : {}),
       ...(this.aimingTowerId !== undefined ? { aimingTowerId: this.aimingTowerId } : {}),
       ...(this.aimPoint ? { aimPoint: this.aimPoint } : {}),
+      ...(this.towerPlacement ? { towerPlacement: this.towerPlacement } : {}),
       ...(this.reviveOrdinal !== undefined ? { reviveOrdinal: this.reviveOrdinal } : {}),
       victory: this.victory,
       ...(this.endlessResult ? { endlessResult: this.endlessResult } : {}),
@@ -260,7 +274,7 @@ export class GuardianGateGame {
     try {
       await this.renderer.loadStageAssets(stageId, (progress) => {
         if (generation === this.stageLoadGeneration) this.loadingProgress = progress;
-      });
+      }, bundle);
       if (generation !== this.stageLoadGeneration || this.disposed) {
         this.releaseStaleStageLoad(stageId);
         return;
@@ -311,10 +325,14 @@ export class GuardianGateGame {
         : saved?.authoritySnapshot;
       this.authority = new LocalPracticeAuthority(bundle, this.seed, authoritySnapshot);
       const initialHud = this.simulation.getHudProjection();
+      this.renderer.clearShopAffordableNotice();
+      this.hud = initialHud;
       this.commandSequence = Math.max(1_000_000, initialHud.lastCommandSeq);
       this.snapshotSequence = 0;
       this.lastSavedTick = saved?.tick ?? 0;
-      this.currentOfferOrdinal = Math.max(1, initialHud.level);
+      this.currentOfferOrdinal = initialHud.mode === 'fixed'
+        ? Math.max(1, initialHud.shopOfferOrdinal)
+        : Math.max(1, initialHud.level);
       this.reviveOrdinal = initialHud.flowState === 'defeat-pending'
         ? initialHud.revivesUsed + 1
         : undefined;
@@ -338,6 +356,7 @@ export class GuardianGateGame {
       this.aimPoint = undefined;
       this.aimDragOrigin = undefined;
       this.aimDragActivated = false;
+      this.clearTowerPlacement();
       this.towerDamageBuckets = [];
       this.strategyPanelOpen = false;
       this.strategyPanelResumeOnClose = false;
@@ -348,6 +367,7 @@ export class GuardianGateGame {
       if (migratedWarlessSave) this.saveBattle();
       this.lastFrameAt = Date.now();
       this.refreshBattleProjection();
+      this.ensureShopOfferProjection();
       this.audio.start();
       if (previousRenderedStageId !== stageId) {
         this.renderer.releaseStageAssets(previousRenderedStageId);
@@ -368,19 +388,120 @@ export class GuardianGateGame {
 
   private refreshBattleProjection(): void {
     if (!this.simulation) return;
-    const previousOfferId = this.hud?.activeOffer?.offerId;
-    this.hud = this.simulation.getHudProjection();
-    const nextOfferId = this.hud.activeOffer?.offerId;
+    const previousHud = this.hud;
+    const previousOfferId = previousHud?.shopOffer?.offerId ?? previousHud?.activeOffer?.offerId;
+    const nextHud = this.simulation.getHudProjection();
+    const newlyAffordable = this.newlyAffordableShopCardCount(previousHud, nextHud);
+    this.hud = nextHud;
+    if (
+      nextHud.mode !== 'fixed' ||
+      nextHud.flowState !== 'preparing' ||
+      this.strategyPanelOpen ||
+      this.victory ||
+      this.fatalError
+    ) {
+      this.clearTowerPlacement();
+    } else if (
+      this.towerPlacement?.kind === 'build' &&
+      this.towerPlacement.towerId !== nextHud.towerBuild.nextTowerId
+    ) {
+      this.clearTowerPlacement();
+    }
+    const nextOfferId = nextHud.shopOffer?.offerId ?? nextHud.activeOffer?.offerId;
     if (!nextOfferId || nextOfferId !== previousOfferId) this.selectedShopCardId = undefined;
     if (!this.hud.activeTowerIds.includes(this.selectedTowerId)) {
       this.selectedTowerId = this.hud.activeTowerIds[0] ?? 0;
     }
     this.snapshotSequence += 1;
     this.snapshot = this.simulation.getRenderSnapshot(1, this.snapshotSequence);
-    if (this.hud.activeOffer) this.currentOfferOrdinal = Math.max(1, this.hud.level);
+    if (this.hud.activeOffer || this.hud.shopOffer) {
+      this.currentOfferOrdinal = this.hud.mode === 'fixed'
+        ? Math.max(1, this.hud.shopOfferOrdinal)
+        : Math.max(1, this.hud.level);
+    }
+    if (newlyAffordable > 0) {
+      this.renderer.notifyShopAffordable(
+        newlyAffordable,
+        this.affordableShopCardCount(this.hud),
+      );
+      wx.vibrateShort?.({ type: 'light' });
+    }
     if (this.hud.flowState === 'defeat-pending' && this.reviveOrdinal === undefined) {
       this.reviveOrdinal = this.hud.revivesUsed + 1;
     }
+  }
+
+  private ensureShopOfferProjection(): void {
+    if (
+      !this.hud ||
+      this.hud.mode !== 'fixed' ||
+      this.hud.shopOffer ||
+      !this.hud.shopAvailable ||
+      (this.hud.flowState !== 'preparing' &&
+        this.hud.flowState !== 'running' &&
+        this.hud.flowState !== 'paused')
+    ) {
+      return;
+    }
+    const opened = this.issueCommand({ type: 'OPEN_SHOP' });
+    const refreshedHud = this.simulation?.getHudProjection();
+    if (
+      opened === 'applied' &&
+      refreshedHud?.flowState === 'offer-pending' &&
+      refreshedHud.shopOffer
+    ) {
+      this.issueCommand({ type: 'CLOSE_SHOP' });
+    }
+  }
+
+  private shopPreviewIsActionable(preview: TowerCardPreviewV1): boolean {
+    if (!preview.capped) return true;
+    if (
+      preview.towerCountBefore !== undefined ||
+      preview.towerCountAfter !== undefined
+    ) {
+      return preview.towerCountAfter !== preview.towerCountBefore;
+    }
+    return Object.keys(preview.after).some((key) => {
+      const stat = key as keyof TowerCardPreviewV1['after'];
+      return preview.after[stat] !== preview.before[stat];
+    });
+  }
+
+  private affordableShopCardCount(hud: HudProjectionV1): number {
+    if (!hud.shopAvailable || hud.shopPurchasedThisWave) return 0;
+    return (hud.shopOfferPreviews ?? []).filter(
+      (preview) =>
+        this.shopPreviewIsActionable(preview) &&
+        preview.warPointCost <= hud.warPointsBalance,
+    ).length;
+  }
+
+  private newlyAffordableShopCardCount(
+    previousHud: HudProjectionV1 | undefined,
+    nextHud: HudProjectionV1,
+  ): number {
+    if (
+      !previousHud ||
+      previousHud.mode !== 'fixed' ||
+      nextHud.mode !== 'fixed' ||
+      previousHud.shopOffer?.offerId !== nextHud.shopOffer?.offerId ||
+      nextHud.warPointsBalance <= previousHud.warPointsBalance ||
+      !nextHud.shopAvailable ||
+      nextHud.shopPurchasedThisWave
+    ) {
+      return 0;
+    }
+    const previousPreviews = new Map(
+      (previousHud.shopOfferPreviews ?? []).map((preview) => [preview.cardId, preview]),
+    );
+    return (nextHud.shopOfferPreviews ?? []).filter((preview) => {
+      const previous = previousPreviews.get(preview.cardId);
+      return previous !== undefined &&
+        this.shopPreviewIsActionable(preview) &&
+        previousHud.warPointsBalance < previous.warPointCost &&
+        nextHud.warPointsBalance >= preview.warPointCost;
+    }).length;
   }
 
   private processOutput(initial: SimulationOutput): void {
@@ -401,7 +522,29 @@ export class GuardianGateGame {
         if (unlockedTower) {
           this.selectedTowerId = unlockedTower.towerId;
         }
-        if (output.events.some((event) => event.type === 'CARD_PURCHASED')) this.saveBattle();
+        const builtTower = output.events.find(
+          (event): event is Extract<BattleEvent, { type: 'TOWER_BUILT' }> =>
+            event.type === 'TOWER_BUILT',
+        );
+        if (builtTower) {
+          this.selectedTowerId = builtTower.towerId;
+          this.clearTowerPlacement();
+          wx.vibrateShort?.({ type: 'medium' });
+        }
+        const movedTower = output.events.find(
+          (event): event is Extract<BattleEvent, { type: 'TOWER_MOVED' }> =>
+            event.type === 'TOWER_MOVED',
+        );
+        if (movedTower) {
+          this.selectedTowerId = movedTower.towerId;
+          this.clearTowerPlacement();
+          wx.vibrateShort?.({ type: 'light' });
+        }
+        if (output.events.some(
+          (event) => event.type === 'CARD_PURCHASED' ||
+            event.type === 'TOWER_BUILT' ||
+            event.type === 'TOWER_MOVED',
+        )) this.saveBattle();
         const endlessSettlement = output.events.find(
           (event): event is Extract<BattleEvent, { type: 'ENDLESS_SETTLED' }> =>
             event.type === 'ENDLESS_SETTLED',
@@ -512,6 +655,130 @@ export class GuardianGateGame {
     }
   }
 
+  private clearTowerPlacement(): void {
+    this.towerPlacement = undefined;
+    this.towerPlacementDragOrigin = undefined;
+    this.towerPlacementDragActivated = false;
+    if (this.aimingTowerId === undefined) this.activeTouchId = undefined;
+  }
+
+  private beginTowerBuildPlacement(): void {
+    const build = this.hud?.towerBuild;
+    if (
+      this.hud?.mode !== 'fixed' ||
+      this.hud.flowState !== 'preparing' ||
+      !build?.canBuild ||
+      build.nextTowerId === null
+    ) {
+      return;
+    }
+    this.aimingTowerId = undefined;
+    this.aimPoint = undefined;
+    this.towerPlacement = {
+      kind: 'build',
+      towerId: build.nextTowerId,
+    };
+    this.towerPlacementDragOrigin = undefined;
+    this.towerPlacementDragActivated = false;
+    wx.vibrateShort?.({ type: 'light' });
+  }
+
+  private beginTowerMovePlacement(towerId: TowerId, point: DesignPoint): void {
+    if (
+      this.hud?.mode !== 'fixed' ||
+      this.hud.flowState !== 'preparing' ||
+      !this.hud.activeTowerIds.includes(towerId)
+    ) {
+      return;
+    }
+    const current = this.hud.towerPositions[towerId];
+    if (!current) return;
+    this.selectedTowerId = towerId;
+    this.aimingTowerId = undefined;
+    this.aimPoint = undefined;
+    this.towerPlacement = {
+      kind: 'move',
+      towerId,
+      point: { ...current },
+      valid: true,
+    };
+    this.towerPlacementDragOrigin = point;
+    this.towerPlacementDragActivated = false;
+  }
+
+  private updateTowerPlacement(point: DesignPoint): void {
+    const placement = this.towerPlacement;
+    const hud = this.hud;
+    if (
+      !placement ||
+      !hud ||
+      hud.mode !== 'fixed' ||
+      hud.flowState !== 'preparing'
+    ) {
+      return;
+    }
+    const worldPoint = this.renderer.toBattleWorldPoint(point);
+    const existingTowerPoints = hud.activeTowerIds.flatMap((towerId) => {
+      if (placement.kind === 'move' && towerId === placement.towerId) return [];
+      const position = hud.towerPositions[towerId];
+      return position ? [{ ...position }] : [];
+    });
+    const result = validateTowerPlacement({
+      point: worldPoint,
+      buildZones: createDefaultTowerBuildZones(),
+      routePoints: this.activeBundle.route.points,
+      breachPoint: this.activeBundle.route.breachPoint,
+      existingTowerPoints,
+    });
+    const obscuredByHud = this.renderer.isBattleHudPoint(point) ||
+      this.renderer.isWavePreparationPanelPoint(point);
+    this.towerPlacement = {
+      ...placement,
+      point: result.point,
+      valid: result.valid && !obscuredByHud,
+      reason: obscuredByHud ? 'outside-build-zone' : result.reason,
+    };
+  }
+
+  private finishTowerPlacement(cancelled = false): void {
+    const placement = this.towerPlacement;
+    const hud = this.hud;
+    this.activeTouchId = undefined;
+    this.towerPlacementDragOrigin = undefined;
+    const dragged = this.towerPlacementDragActivated;
+    this.towerPlacementDragActivated = false;
+    if (!placement || !hud) return;
+    if (cancelled || (placement.kind === 'move' && !dragged)) {
+      this.clearTowerPlacement();
+      return;
+    }
+    if (!placement.point || !placement.valid) {
+      wx.vibrateShort?.({ type: 'medium' });
+      if (placement.kind === 'move') this.clearTowerPlacement();
+      return;
+    }
+
+    if (placement.kind === 'move') {
+      const current = hud.towerPositions[placement.towerId];
+      if (current && current.x === placement.point.x && current.y === placement.point.y) {
+        this.clearTowerPlacement();
+        return;
+      }
+    }
+
+    const status = placement.kind === 'build'
+      ? this.issueCommand({ type: 'BUILD_TOWER', point: placement.point })
+      : this.issueCommand({
+        type: 'MOVE_TOWER',
+        towerId: placement.towerId,
+        point: placement.point,
+      });
+    if (status !== 'applied') {
+      this.towerPlacement = { ...placement, valid: false };
+      wx.vibrateShort?.({ type: 'medium' });
+    }
+  }
+
   private updateAim(point: DesignPoint, towerId: TowerId): void {
     if (!this.simulation || this.hud?.flowState !== 'running') return;
     if (!this.hud.activeTowerIds.includes(towerId)) return;
@@ -520,7 +787,8 @@ export class GuardianGateGame {
       x: Math.max(0, Math.min(1920, worldPoint.x)),
       y: Math.max(0, Math.min(1200, worldPoint.y)),
     };
-    const anchor = this.activeBundle.route.towerAnchors[towerId];
+    const anchor = this.hud.towerPositions[towerId];
+    if (!anchor) return;
     const deltaX = clamped.x - anchor.x;
     const deltaY = clamped.y - anchor.y;
     if (deltaX * deltaX + deltaY * deltaY < 72 * 72) {
@@ -574,8 +842,37 @@ export class GuardianGateGame {
       if (!this.hud.activeTowerIds.includes(this.selectedTowerId)) return;
       this.issueCommand({ type: 'ACTIVATE_OVERDRIVE', towerId: this.selectedTowerId });
     } else if (id === 'hud-shop' && this.hud?.mode === 'fixed' && this.hud.shopAvailable) {
+      this.clearTowerPlacement();
       this.selectedShopCardId = undefined;
       this.issueCommand({ type: 'OPEN_SHOP' });
+    } else if (id === 'tower-build') {
+      this.beginTowerBuildPlacement();
+    } else if (id === 'tower-build-cancel') {
+      this.clearTowerPlacement();
+    } else if (id.startsWith('shop-shortcut:')) {
+      const slotIndex = Number(id.slice('shop-shortcut:'.length));
+      const cardId = this.hud?.shopOffer?.cards[slotIndex];
+      const preview = cardId
+        ? this.hud?.shopOfferPreviews?.find((candidate) => candidate.cardId === cardId)
+        : undefined;
+      if (
+        this.hud?.mode !== 'fixed' ||
+        !this.hud.shopAvailable ||
+        (this.hud.flowState !== 'preparing' &&
+          this.hud.flowState !== 'running' &&
+          this.hud.flowState !== 'paused') ||
+        !cardId ||
+        !preview ||
+        !this.shopPreviewIsActionable(preview) ||
+        preview.warPointCost > this.hud.warPointsBalance
+      ) {
+        return;
+      }
+      this.clearTowerPlacement();
+      this.selectedShopCardId = cardId;
+      if (this.issueCommand({ type: 'OPEN_SHOP' }) === 'applied') {
+        wx.vibrateShort?.({ type: 'light' });
+      }
     } else if (id === 'shop-close' && this.hud?.mode === 'fixed') {
       this.selectedShopCardId = undefined;
       this.issueCommand({ type: 'CLOSE_SHOP' });
@@ -592,13 +889,22 @@ export class GuardianGateGame {
     } else if (id === 'hud-mute') {
       this.audio.setMuted(!this.audio.isMuted());
     } else if (id === 'hud-strategy') {
+      if (
+        !this.hud ||
+        (this.hud.flowState !== 'running' &&
+          this.hud.flowState !== 'paused' &&
+          this.hud.flowState !== 'performance-paused')
+      ) {
+        return;
+      }
+      this.clearTowerPlacement();
       this.openStrategyPanel();
     } else if (id === 'strategy-close') {
       this.closeStrategyPanel();
     } else if (id.startsWith('strategy-tower:')) {
       const towerId = Number(id.slice('strategy-tower:'.length));
       if (
-        (towerId === 0 || towerId === 1 || towerId === 2) &&
+        (towerId === 0 || towerId === 1 || towerId === 2 || towerId === 3) &&
         this.hud?.activeTowerIds.includes(towerId)
       ) {
         this.selectedTowerId = towerId;
@@ -640,6 +946,7 @@ export class GuardianGateGame {
     this.aimPoint = undefined;
     this.aimDragOrigin = undefined;
     this.aimDragActivated = false;
+    this.clearTowerPlacement();
     this.towerDamageBuckets = [];
     this.strategyPanelOpen = false;
     this.strategyPanelResumeOnClose = false;
@@ -752,7 +1059,11 @@ export class GuardianGateGame {
 
   private async selectStage(stageId: BattleStageId): Promise<void> {
     if (!isStageUnlocked(this.campaign, stageId)) return;
-    if (stageId === this.selectedStageId && this.renderer.isStageAssetsLoaded(stageId)) {
+    const bundle = STAGE_BUNDLES[stageId];
+    if (
+      stageId === this.selectedStageId &&
+      this.renderer.isStageAssetsLoaded(stageId, bundle)
+    ) {
       const previousRenderedStageId = this.renderedStageId;
       this.showStageBundle(stageId);
       if (previousRenderedStageId !== stageId) {
@@ -773,7 +1084,7 @@ export class GuardianGateGame {
     try {
       await this.renderer.loadStageAssets(stageId, (progress) => {
         if (generation === this.stageLoadGeneration) this.loadingProgress = progress;
-      });
+      }, bundle);
       if (generation !== this.stageLoadGeneration || this.disposed) {
         this.releaseStaleStageLoad(stageId);
         return;
@@ -954,7 +1265,7 @@ export class GuardianGateGame {
         bucket = this.towerDamageBuckets.find((candidate) => candidate.tick === event.tick);
       }
       if (!bucket) {
-        bucket = { tick: event.tick, damageByTowerMilli: [0, 0, 0] };
+        bucket = { tick: event.tick, damageByTowerMilli: [0, 0, 0, 0] };
         this.towerDamageBuckets.push(bucket);
       }
       bucket.damageByTowerMilli[event.towerId] += event.damageMilli;
@@ -977,7 +1288,7 @@ export class GuardianGateGame {
     this.pruneTowerDamageBuckets();
     const currentTick = this.hud?.tick ?? this.simulation?.getHudProjection().tick ?? 0;
     const oneSecondStart = currentTick - TICKS_PER_SECOND + 1;
-    return ([0, 1, 2] as const).map((towerId) => ({
+    return ([0, 1, 2, 3] as const).map((towerId) => ({
       towerId,
       damageLast1sMilli: this.towerDamageBuckets.reduce(
         (sum, bucket) => sum + (bucket.tick >= oneSecondStart ? bucket.damageByTowerMilli[towerId] : 0),
@@ -1025,9 +1336,34 @@ export class GuardianGateGame {
         this.handleInteraction(interaction);
         return;
       }
-      if (this.screen !== 'battle' || this.hud?.flowState !== 'running' || this.victory || this.fatalError) return;
+      if (this.screen !== 'battle' || !this.hud || this.victory || this.fatalError) return;
       if (!this.renderer.containsDesignPoint(point)) return;
       this.audio.start();
+
+      if (this.hud.mode === 'fixed' && this.hud.flowState === 'preparing') {
+        if (
+          this.renderer.isBattleHudPoint(point) ||
+          this.renderer.isWavePreparationPanelPoint(point)
+        ) {
+          return;
+        }
+        const selectedTower = this.renderer.hitTestTower(point);
+        if (this.towerPlacement?.kind === 'build') {
+          this.activeTouchId = this.touchIdentifier(touch);
+          this.towerPlacementDragOrigin = point;
+          this.towerPlacementDragActivated = true;
+          this.updateTowerPlacement(point);
+          return;
+        }
+        if (selectedTower !== undefined) {
+          if (selectedTower !== this.selectedTowerId) wx.vibrateShort?.({ type: 'light' });
+          this.activeTouchId = this.touchIdentifier(touch);
+          this.beginTowerMovePlacement(selectedTower, point);
+        }
+        return;
+      }
+
+      if (this.hud.flowState !== 'running') return;
       const selectedTower = this.renderer.hitTestTower(point);
       if (selectedTower === undefined && this.renderer.isBattleHudPoint(point)) return;
       if (selectedTower !== undefined) {
@@ -1042,10 +1378,27 @@ export class GuardianGateGame {
     });
 
     wx.onTouchMove((event) => {
-      if (this.aimingTowerId === undefined || this.activeTouchId === undefined) return;
+      if (this.activeTouchId === undefined) return;
       const touch = this.findActiveTouch(event);
       if (!touch) return;
       const point = this.touchPoint(touch);
+      if (this.towerPlacement && this.hud?.flowState === 'preparing') {
+        if (!this.towerPlacementDragActivated) {
+          const origin = this.towerPlacementDragOrigin ?? point;
+          const deltaX = point.x - origin.x;
+          const deltaY = point.y - origin.y;
+          if (
+            deltaX * deltaX + deltaY * deltaY <
+              AIM_DRAG_THRESHOLD_PX * AIM_DRAG_THRESHOLD_PX
+          ) {
+            return;
+          }
+          this.towerPlacementDragActivated = true;
+        }
+        this.updateTowerPlacement(point);
+        return;
+      }
+      if (this.aimingTowerId === undefined) return;
       if (!this.aimDragActivated) {
         const origin = this.aimDragOrigin ?? point;
         const deltaX = point.x - origin.x;
@@ -1058,11 +1411,14 @@ export class GuardianGateGame {
       this.updateAim(point, this.aimingTowerId);
     });
 
-    const endAim = (event?: any) => {
+    const endInteraction = (event?: any, cancelled = false) => {
       if (this.activeTouchId !== undefined && event?.changedTouches?.length) {
         const activeEnded = Array.from(event.changedTouches as ArrayLike<any>)
           .some((touch) => this.touchIdentifier(touch) === this.activeTouchId);
         if (!activeEnded) return;
+      }
+      if (this.towerPlacement && this.activeTouchId !== undefined) {
+        this.finishTowerPlacement(cancelled);
       }
       this.aimingTowerId = undefined;
       this.activeTouchId = undefined;
@@ -1070,11 +1426,12 @@ export class GuardianGateGame {
       this.aimDragOrigin = undefined;
       this.aimDragActivated = false;
     };
-    wx.onTouchEnd(endAim);
-    wx.onTouchCancel(endAim);
+    wx.onTouchEnd((event) => endInteraction(event));
+    wx.onTouchCancel((event) => endInteraction(event, true));
 
     wx.onHide(() => {
-      endAim();
+      endInteraction(undefined, true);
+      this.clearTowerPlacement();
       if (this.screen === 'battle' && this.simulation) {
         if (this.simulation.getHudProjection().flowState === 'running') {
           this.issueCommand({ type: 'PAUSE' });

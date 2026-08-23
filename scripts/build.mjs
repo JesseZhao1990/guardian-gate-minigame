@@ -55,12 +55,21 @@ const mainPackageAssetFiles = [
   'stage-01/towers/TOWER_FROST_HEAD_V2.png',
   'stage-01/towers/TOWER_STORM_BASE_V2.png',
   'stage-01/towers/TOWER_STORM_HEAD_V2.png',
+  'stage-01/towers/TOWER_CORAL_BASE_V1.png',
+  'stage-01/towers/TOWER_CORAL_HEAD_V1.png',
+  'stage-01/projectiles/PROJECTILE_BASIC_ARROW.png',
   'stage-01/ui/icons/MOD_DAMAGE.png',
   'stage-01/ui/icons/MOD_FREQUENCY.png',
   'stage-01/ui/icons/MOD_ARROW_COUNT.png',
   'stage-01/ui/icons/MOD_PENETRATION.png',
   'stage-01/ui/icons/MOD_CRIT_RATE.png',
   'stage-01/ui/icons/MOD_CRIT_DAMAGE.png',
+  'stage-01/ui/icons/MOD_CRITICAL_MASTERY.png',
+  'stage-01/ui/icons/MOD_TOWER_REINFORCEMENT.png',
+  'stage-01/ui/icons/ICON_PAUSE.png',
+  'stage-01/ui/icons/ICON_PLAY.png',
+  'stage-01/ui/icons/ICON_SPEED_1X.png',
+  'stage-01/ui/icons/ICON_SPEED_2X.png',
   'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__SPAWN_PORTAL.png',
   'stage-01/vfx/VFX_BASIC_COMBAT__NORMAL_HIT.png',
   'stage-01/vfx/VFX_BASIC_COMBAT__CRITICAL_HIT.png',
@@ -68,11 +77,11 @@ const mainPackageAssetFiles = [
   'stage-01/vfx/VFX_BASIC_COMBAT__ARMOR_HIT.png',
   'stage-01/vfx/VFX_BASIC_COMBAT__ARROW_TRAIL.png',
   'stage-01/vfx/VFX_BASIC_COMBAT__MULTISHOT_VOLLEY.png',
-  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__BREACH.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__BREACH_V2.png',
   'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__DEFEAT.png',
-  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__LEVEL_UP.png',
-  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__REVIVE.png',
-  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__VICTORY.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__LEVEL_UP_V2.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__REVIVE_V2.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__VICTORY_V2.png',
   'stage-01/vfx/VFX_STATUS_SET__REVIVE_PROTECT.png',
   'stage-01/audio/SFX_BATTLE_01.m4a',
   'stage-01/audio/SFX_BATTLE_03.m4a',
@@ -84,10 +93,49 @@ const mainPackageAssetFiles = [
   'stage-01/audio/STG_VICTORY.m4a',
 ];
 
+const sharedMainPackageAssets = [
+  {
+    assetId: 'MON_DRAGON_TORTOISE',
+    source: 'stage-03/enemies/MON_DRAGON_TORTOISE.png',
+    target: 'stage-01/enemies/MON_DRAGON_TORTOISE.png',
+  },
+  {
+    assetId: 'MON_REEF_GUARD',
+    source: 'stage-02/enemies/MON_REEF_GUARD.png',
+    target: 'stage-01/enemies/MON_REEF_GUARD.png',
+  },
+  {
+    assetId: 'MON_ABYSS_SCALE_GUARD',
+    source: 'stage-04/enemies/MON_ABYSS_SCALE_GUARD.png',
+    target: 'stage-01/enemies/MON_ABYSS_SCALE_GUARD.png',
+  },
+  {
+    assetId: 'MON_SOLAR_FORMATION_PRIEST',
+    source: 'stage-05/enemies/MON_SOLAR_FORMATION_PRIEST.png',
+    target: 'stage-01/enemies/MON_SOLAR_FORMATION_PRIEST.png',
+  },
+  {
+    assetId: 'MON_PHASE_SHELL_WEAVER',
+    source: 'stage-06/enemies/MON_PHASE_SHELL_WEAVER.png',
+    target: 'stage-01/enemies/MON_PHASE_SHELL_WEAVER.png',
+  },
+  {
+    assetId: 'MON_ETHEREAL_WALKER',
+    source: 'stage-07/enemies/MON_ETHEREAL_WALKER.png',
+    target: 'stage-01/enemies/MON_ETHEREAL_WALKER.png',
+  },
+];
+
 for (const file of mainPackageAssetFiles) {
   const target = resolve(dist, 'assets', file);
   await mkdir(dirname(target), { recursive: true });
   await cp(resolve(root, 'assets', file), target);
+}
+
+for (const asset of sharedMainPackageAssets) {
+  const target = resolve(dist, 'assets', asset.target);
+  await mkdir(dirname(target), { recursive: true });
+  await cp(resolve(root, 'assets', asset.source), target);
 }
 
 for (const stagePackage of stagePackages) {
@@ -95,6 +143,11 @@ for (const stagePackage of stagePackages) {
   const targetAssetRoot = resolve(packageRoot, 'assets', stagePackage.assetRoot);
   await mkdir(packageRoot, { recursive: true });
   await cp(resolve(root, 'assets', stagePackage.assetRoot), targetAssetRoot, { recursive: true });
+  for (const asset of sharedMainPackageAssets) {
+    if (!asset.source.startsWith(`${stagePackage.assetRoot}/`)) continue;
+    const packagedRelativePath = asset.source.slice(stagePackage.assetRoot.length + 1);
+    await rm(resolve(targetAssetRoot, packagedRelativePath), { force: true });
+  }
   const packageEntry = [
     "'use strict';",
     'GameGlobal.__guardianGateLoadedSubpackages = GameGlobal.__guardianGateLoadedSubpackages || {};',
@@ -112,6 +165,7 @@ const buildMeta = {
   source: 'guardian-gate-minigame',
   entry: 'src/game.ts',
   stageIds,
+  sharedMainAssets: sharedMainPackageAssets,
   subpackages: stagePackages.map(({ stageId, name, root: packageRoot, assetRoot }) => ({
     stageId,
     name,

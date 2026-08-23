@@ -28,6 +28,39 @@ const expectedSubpackages = expectedStageIds.slice(1).map((stageId) => {
 });
 const packagedAssetPath = (stageName, assetPath) =>
   `dist/packages/${stageName}/assets/${stageName}/${assetPath}`;
+const dragonTortoiseMainPath = 'dist/assets/stage-01/enemies/MON_DRAGON_TORTOISE.png';
+const sharedMainAssets = [
+  {
+    assetId: 'MON_DRAGON_TORTOISE',
+    source: 'stage-03/enemies/MON_DRAGON_TORTOISE.png',
+    target: 'stage-01/enemies/MON_DRAGON_TORTOISE.png',
+  },
+  {
+    assetId: 'MON_REEF_GUARD',
+    source: 'stage-02/enemies/MON_REEF_GUARD.png',
+    target: 'stage-01/enemies/MON_REEF_GUARD.png',
+  },
+  {
+    assetId: 'MON_ABYSS_SCALE_GUARD',
+    source: 'stage-04/enemies/MON_ABYSS_SCALE_GUARD.png',
+    target: 'stage-01/enemies/MON_ABYSS_SCALE_GUARD.png',
+  },
+  {
+    assetId: 'MON_SOLAR_FORMATION_PRIEST',
+    source: 'stage-05/enemies/MON_SOLAR_FORMATION_PRIEST.png',
+    target: 'stage-01/enemies/MON_SOLAR_FORMATION_PRIEST.png',
+  },
+  {
+    assetId: 'MON_PHASE_SHELL_WEAVER',
+    source: 'stage-06/enemies/MON_PHASE_SHELL_WEAVER.png',
+    target: 'stage-01/enemies/MON_PHASE_SHELL_WEAVER.png',
+  },
+  {
+    assetId: 'MON_ETHEREAL_WALKER',
+    source: 'stage-07/enemies/MON_ETHEREAL_WALKER.png',
+    target: 'stage-01/enemies/MON_ETHEREAL_WALKER.png',
+  },
+];
 const requiredFiles = [
   'project.config.json',
   'dist/game.js',
@@ -44,7 +77,8 @@ const requiredFiles = [
   'dist/assets/stage-01/enemies/MON_SWIFT_EEL_BATTLE_V2.png',
   'dist/assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
   'dist/assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
-  packagedAssetPath('stage-03', 'enemies/MON_DRAGON_TORTOISE.png'),
+  ...sharedMainAssets.map(({ target }) => `dist/assets/${target}`),
+  packagedAssetPath('stage-08', 'enemies/MON_ABYSS_FLYING_EEL.png'),
   packagedAssetPath('stage-04', 'enemies/MON_ABYSS_WYRM.png'),
   packagedAssetPath('stage-05', 'enemies/MON_ECLIPSE_KUN_EMPEROR.png'),
   packagedAssetPath('stage-06', 'enemies/MON_MIRAGE_MOTHER.png'),
@@ -56,6 +90,15 @@ const requiredFiles = [
   'dist/assets/stage-01/towers/TOWER_FROST_HEAD_V2.png',
   'dist/assets/stage-01/towers/TOWER_STORM_BASE_V2.png',
   'dist/assets/stage-01/towers/TOWER_STORM_HEAD_V2.png',
+  'dist/assets/stage-01/towers/TOWER_CORAL_BASE_V1.png',
+  'dist/assets/stage-01/towers/TOWER_CORAL_HEAD_V1.png',
+  'dist/assets/stage-01/projectiles/PROJECTILE_BASIC_ARROW.png',
+  'dist/assets/stage-01/ui/icons/MOD_CRITICAL_MASTERY.png',
+  'dist/assets/stage-01/ui/icons/MOD_TOWER_REINFORCEMENT.png',
+  'dist/assets/stage-01/ui/icons/ICON_PAUSE.png',
+  'dist/assets/stage-01/ui/icons/ICON_PLAY.png',
+  'dist/assets/stage-01/ui/icons/ICON_SPEED_1X.png',
+  'dist/assets/stage-01/ui/icons/ICON_SPEED_2X.png',
   'dist/assets/stage-01/audio/SFX_BATTLE_01.m4a',
   'dist/assets/stage-01/audio/STG_VICTORY.m4a',
   ...expectedSubpackages.map(({ root: packageRoot }) => `dist/${packageRoot}/game.js`),
@@ -72,9 +115,12 @@ for (const file of towerAssets) {
   const width = png.readUInt32BE(16);
   const height = png.readUInt32BE(20);
   const colorType = png[25];
+  const hasAlpha = colorType === 4 || colorType === 6 || (
+    colorType === 3 && png.includes(Buffer.from('tRNS'))
+  );
   if (signature !== '89504e470d0a1a0a') throw new Error(`塔素材不是有效 PNG：${file}`);
   if (width !== 384 || height !== 384) throw new Error(`塔素材必须为 384×384：${file}`);
-  if (colorType !== 4 && colorType !== 6) throw new Error(`塔素材必须携带透明通道：${file}`);
+  if (!hasAlpha) throw new Error(`塔素材必须携带透明通道：${file}`);
 }
 
 const gameSourceBuffer = await readFile(resolve(root, 'dist/game.js'));
@@ -134,13 +180,13 @@ for (const background of [
     throw new Error(`关卡背景不是有效 JPEG：${background}`);
   }
   const { width, height } = jpegDimensions(jpeg, background);
-  if (width !== 1920 || height !== 1080) {
-    throw new Error(`关卡背景必须为 1920×1080：${background}`);
+  if (width !== 3200 || height !== 1440) {
+    throw new Error(`关卡背景必须为 3200×1440 连续超扫图：${background}`);
   }
 }
 
 for (const [bossSpritePath, bossName] of [
-  [packagedAssetPath('stage-03', 'enemies/MON_DRAGON_TORTOISE.png'), '第三关玄甲龙鳌'],
+  [dragonTortoiseMainPath, '第一至第三关共享玄甲龙鳌'],
   [packagedAssetPath('stage-04', 'enemies/MON_ABYSS_WYRM.png'), '第四关噬潮魔蛟'],
   [packagedAssetPath('stage-05', 'enemies/MON_ECLIPSE_KUN_EMPEROR.png'), '第五关蚀日鲲皇'],
   [packagedAssetPath('stage-06', 'enemies/MON_MIRAGE_MOTHER.png'), '第六关万相蜃母'],
@@ -160,6 +206,34 @@ for (const [bossSpritePath, bossName] of [
   if (!gameSource.includes(bossSpritePath.replace(/^dist\//, ''))) {
     throw new Error(`运行时代码未引用${bossName}素材`);
   }
+}
+
+for (const { assetId, source, target } of sharedMainAssets) {
+  const sourceAsset = await readFile(resolve(root, 'assets', source));
+  const mainAsset = await readFile(resolve(root, 'dist/assets', target));
+  if (!sourceAsset.equals(mainAsset)) {
+    throw new Error(`共享命名敌人 ${assetId} 的主包文件必须与正式源素材逐字节一致`);
+  }
+}
+for (const source of [
+  'stage-01/towers/TOWER_CORAL_BASE_V1.png',
+  'stage-01/towers/TOWER_CORAL_HEAD_V1.png',
+  'stage-01/projectiles/PROJECTILE_BASIC_ARROW.png',
+  'stage-01/ui/icons/MOD_CRITICAL_MASTERY.png',
+  'stage-01/ui/icons/MOD_TOWER_REINFORCEMENT.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__BREACH_V2.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__LEVEL_UP_V2.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__REVIVE_V2.png',
+  'stage-01/vfx/VFX_BATTLE_SYSTEM_SET__VICTORY_V2.png',
+]) {
+  const sourceAsset = await readFile(resolve(root, 'assets', source));
+  const mainAsset = await readFile(resolve(root, 'dist/assets', source));
+  if (!sourceAsset.equals(mainAsset)) {
+    throw new Error(`新正式主包素材与源文件不一致：${source}`);
+  }
+}
+if (gameSource.includes('packages/stage-03/assets/stage-03/enemies/MON_DRAGON_TORTOISE.png')) {
+  throw new Error('玄甲龙鳌已提升为共享主包资源，运行时不得再引用 Stage 03 分包路径');
 }
 
 const forbiddenBackgroundAudio = [
@@ -193,6 +267,9 @@ if (project.miniprogramRoot !== 'dist/') throw new Error('miniprogramRoot 必须
 if (buildMeta.entry !== 'src/game.ts') throw new Error('构建元数据未声明正式 src/game.ts 入口');
 if (JSON.stringify(buildMeta.stageIds) !== JSON.stringify(expectedStageIds)) {
   throw new Error('构建元数据未声明完整且有序的七关战役与无尽关列表');
+}
+if (JSON.stringify(buildMeta.sharedMainAssets) !== JSON.stringify(sharedMainAssets)) {
+  throw new Error('构建元数据未声明完整的共享命名敌人资源');
 }
 const expectedGameSubpackages = expectedSubpackages.map(({ name, root: packageRoot }) => ({
   name,
@@ -248,6 +325,152 @@ if (!contentOutput) throw new Error('无法检查正式关卡内容导出');
 const contentModule = await import(
   `data:text/javascript;base64,${Buffer.from(contentOutput.contents).toString('base64')}`
 );
+const assetContractBuild = await build({
+  stdin: {
+    contents: [
+      "export { MAIN_PACKAGE_ASSET_PATHS, STAGE_ASSET_MANIFESTS } from './src/render/asset-manifest';",
+      "export { BATTLE_VFX_ASSET_IDS, assertBattleBundleAssetContract, collectReachableEnemyIds, stageAssetPaths } from './src/render/asset-contract';",
+    ].join('\n'),
+    resolveDir: root,
+    sourcefile: 'asset-contract-check.ts',
+    loader: 'ts',
+  },
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: ['node20'],
+  write: false,
+  sourcemap: false,
+  legalComments: 'none',
+});
+const assetContractOutput = assetContractBuild.outputFiles[0];
+if (!assetContractOutput) throw new Error('无法检查正式资源契约');
+const assetContractModule = await import(
+  `data:text/javascript;base64,${Buffer.from(assetContractOutput.contents).toString('base64')}`
+);
+const vfxHashes = new Map();
+for (const assetId of assetContractModule.BATTLE_VFX_ASSET_IDS) {
+  const runtimePath = assetContractModule.MAIN_PACKAGE_ASSET_PATHS[assetId];
+  if (!runtimePath) throw new Error(`战斗 VFX ${assetId} 未声明主包路径`);
+  const vfx = await readFile(resolve(root, 'dist', runtimePath));
+  if (vfx.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
+    throw new Error(`战斗 VFX ${assetId} 不是有效 PNG`);
+  }
+  const width = vfx.readUInt32BE(16);
+  const height = vfx.readUInt32BE(20);
+  const colorType = vfx[25];
+  const hasAlpha = colorType === 4 || colorType === 6 || (
+    colorType === 3 && vfx.includes(Buffer.from('tRNS'))
+  );
+  if (width !== 1_024 || height !== 128 || !hasAlpha) {
+    throw new Error(`战斗 VFX ${assetId} 必须为 1024×128 且携带透明通道`);
+  }
+  const hash = createHash('sha256').update(vfx).digest('hex');
+  const previousAssetId = vfxHashes.get(hash);
+  if (previousAssetId) {
+    throw new Error(`战斗 VFX 不得换名复用同一图片：${previousAssetId} 与 ${assetId}`);
+  }
+  vfxHashes.set(hash, assetId);
+}
+const towerAssetIds = Object.keys(assetContractModule.MAIN_PACKAGE_ASSET_PATHS)
+  .filter((assetId) => /^TOWER_.+_(?:BASE|HEAD)$/.test(assetId))
+  .sort();
+if (towerAssetIds.length !== 8) {
+  throw new Error(`主包防御塔 base/head 资源声明不完整：${towerAssetIds.join('、')}`);
+}
+
+function inspectPngAsset(buffer, label, expectedWidth, expectedHeight) {
+  if (buffer.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') {
+    throw new Error(`${label}不是有效 PNG`);
+  }
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  const colorType = buffer[25];
+  const hasAlpha = colorType === 4 || colorType === 6 || (
+    colorType === 3 && buffer.includes(Buffer.from('tRNS'))
+  );
+  if (width !== expectedWidth || height !== expectedHeight || !hasAlpha) {
+    throw new Error(`${label}必须为 ${expectedWidth}×${expectedHeight} 且携带透明通道`);
+  }
+  return createHash('sha256').update(buffer).digest('hex');
+}
+
+const distinctEnemyAssets = [
+  ['MON_SWIFT_EEL', 'dist/assets/stage-01/enemies/MON_SWIFT_EEL_BATTLE_V2.png'],
+  ['MON_TIDE_IMP', 'dist/assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png'],
+  ['MON_SHELL_CRAB', 'dist/assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png'],
+  ...sharedMainAssets
+    .filter(({ assetId }) => assetId !== 'MON_DRAGON_TORTOISE')
+    .map(({ assetId, target }) => [assetId, `dist/assets/${target}`]),
+  ['MON_ABYSS_FLYING_EEL', packagedAssetPath('stage-08', 'enemies/MON_ABYSS_FLYING_EEL.png')],
+];
+const distinctEnemyHashes = new Map();
+for (const [assetId, file] of distinctEnemyAssets) {
+  const enemySprite = await readFile(resolve(root, file));
+  const hash = inspectPngAsset(enemySprite, `命名敌人 ${assetId} 素材`, 320, 256);
+  const previousAssetId = distinctEnemyHashes.get(hash);
+  if (previousAssetId) {
+    throw new Error(`命名敌人不得换名复用同一图片：${previousAssetId} 与 ${assetId}`);
+  }
+  distinctEnemyHashes.set(hash, assetId);
+  if (!gameSource.includes(file.replace(/^dist\//, ''))) {
+    throw new Error(`运行时代码未引用命名敌人 ${assetId} 素材`);
+  }
+}
+
+for (const [label, file, width, height] of [
+  ['基础箭矢', 'dist/assets/stage-01/projectiles/PROJECTILE_BASIC_ARROW.png', 256, 64],
+  ['会心术图标', 'dist/assets/stage-01/ui/icons/MOD_CRITICAL_MASTERY.png', 128, 128],
+  ['箭塔增援图标', 'dist/assets/stage-01/ui/icons/MOD_TOWER_REINFORCEMENT.png', 128, 128],
+  ['暂停图标', 'dist/assets/stage-01/ui/icons/ICON_PAUSE.png', 128, 128],
+  ['播放图标', 'dist/assets/stage-01/ui/icons/ICON_PLAY.png', 128, 128],
+  ['一倍速图标', 'dist/assets/stage-01/ui/icons/ICON_SPEED_1X.png', 128, 128],
+  ['二倍速图标', 'dist/assets/stage-01/ui/icons/ICON_SPEED_2X.png', 128, 128],
+]) {
+  const image = await readFile(resolve(root, file));
+  inspectPngAsset(image, label, width, height);
+  if (!gameSource.includes(file.replace(/^dist\//, ''))) {
+    throw new Error(`运行时代码未引用${label}素材`);
+  }
+}
+
+for (const stageId of expectedStageIds) {
+  const bundle = contentModule.STAGE_BUNDLES?.[stageId];
+  if (!bundle) throw new Error(`缺少关卡内容：${stageId}`);
+  const dependencies = assetContractModule.assertBattleBundleAssetContract(
+    stageId,
+    bundle,
+    { towerAssetIds },
+  );
+  const paths = assetContractModule.stageAssetPaths(stageId);
+  for (const { assetId, sources } of dependencies) {
+    const runtimePath = paths[assetId];
+    if (!runtimePath) {
+      throw new Error(`${stageId} 的 ${assetId}（${sources.join('、')}）没有运行时路径`);
+    }
+    await access(resolve(root, 'dist', runtimePath), constants.R_OK);
+    if (!gameSource.includes(runtimePath)) {
+      throw new Error(`运行时代码未引用 ${stageId} 可达资源：${assetId} -> ${runtimePath}`);
+    }
+  }
+}
+
+for (const stageId of ['STAGE_01', 'STAGE_02', 'STAGE_03']) {
+  const bundle = contentModule.STAGE_BUNDLES?.[stageId];
+  const reachableEnemyIds = assetContractModule.collectReachableEnemyIds(bundle);
+  const usesDragonTortoise = reachableEnemyIds.some(
+    (enemyId) => bundle.enemies?.[enemyId]?.renderAssetId === 'MON_DRAGON_TORTOISE',
+  );
+  if (!usesDragonTortoise) throw new Error(`${stageId} 必须覆盖可达玄甲龙鳌资源契约`);
+  const resolvedPath = assetContractModule.stageAssetPaths(stageId).MON_DRAGON_TORTOISE;
+  if (resolvedPath !== dragonTortoiseMainPath.replace(/^dist\//, '')) {
+    throw new Error(`${stageId} 玄甲龙鳌未统一解析到共享主包路径`);
+  }
+}
+if ('MON_DRAGON_TORTOISE' in assetContractModule.STAGE_ASSET_MANIFESTS.STAGE_03.entries) {
+  throw new Error('Stage 03 manifest 不得为共享玄甲龙鳌重复声明分包路径');
+}
+
 const stage08Bundle = contentModule.STAGE_BUNDLES?.STAGE_08;
 if (
   stage08Bundle?.stage?.name !== '无尽潮渊' ||
@@ -343,11 +566,14 @@ for (const stagePackage of expectedSubpackages) {
   const builtPackageRoot = resolve(root, 'dist', stagePackage.root);
   const builtAssetRoot = resolve(builtPackageRoot, 'assets', stagePackage.assetRoot);
   const sourceFiles = await relativeFiles(sourceAssetRoot);
+  const packagedSourceFiles = sourceFiles.filter((file) => !sharedMainAssets.some(
+    (asset) => asset.source === `${stagePackage.assetRoot}/${file}`,
+  ));
   const builtAssetFiles = await relativeFiles(builtAssetRoot);
-  if (JSON.stringify(builtAssetFiles) !== JSON.stringify(sourceFiles)) {
+  if (JSON.stringify(builtAssetFiles) !== JSON.stringify(packagedSourceFiles)) {
     throw new Error(`${stagePackage.name} 分包未完整保留原始关卡资源`);
   }
-  for (const assetFile of sourceFiles) {
+  for (const assetFile of packagedSourceFiles) {
     const sourceAsset = await readFile(resolve(sourceAssetRoot, assetFile));
     const builtAsset = await readFile(resolve(builtAssetRoot, assetFile));
     if (!sourceAsset.equals(builtAsset)) {
@@ -369,7 +595,7 @@ for (const stagePackage of expectedSubpackages) {
   const packageFiles = await relativeFiles(builtPackageRoot);
   const expectedPackageFiles = [
     'game.js',
-    ...sourceFiles.map((file) => `assets/${stagePackage.assetRoot}/${file}`),
+    ...packagedSourceFiles.map((file) => `assets/${stagePackage.assetRoot}/${file}`),
   ].sort();
   if (JSON.stringify(packageFiles) !== JSON.stringify(expectedPackageFiles)) {
     throw new Error(`${stagePackage.name} 分包包含未归属的额外文件`);
@@ -378,6 +604,17 @@ for (const stagePackage of expectedSubpackages) {
   try {
     await access(resolve(root, 'dist/assets', stagePackage.assetRoot), constants.F_OK);
     throw new Error(`${stagePackage.name} 资源仍残留在主包`);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+}
+
+for (const { assetId, source } of sharedMainAssets) {
+  const [stageName, ...sourceSegments] = source.split('/');
+  const packageCopy = packagedAssetPath(stageName, sourceSegments.join('/'));
+  try {
+    await access(resolve(root, packageCopy), constants.F_OK);
+    throw new Error(`${stageName} 分包不得重复携带已提升到主包的 ${assetId}`);
   } catch (error) {
     if (error?.code !== 'ENOENT') throw error;
   }
@@ -428,12 +665,16 @@ if (totalBytes >= MAX_TOTAL_BYTES) {
 console.log('✓ 微信小游戏入口与配置完整');
 console.log(`✓ 游戏名「${expectedGameTitle}」已写入首页、工程配置与微信分享链路`);
 console.log('✓ 横屏与独立 dist 根目录配置正确');
-console.log('✓ 三套塔基与动态弩机素材完整、透明且已接入运行时');
-console.log('✓ Stage 01/02/03/04/05/06/07/08 独立战场背景均为 1920×1080 JPEG 且已接入运行时');
-console.log('✓ 第三至第七关及无尽关独立首领均为 600×480 透明素材且已接入运行时');
+console.log('✓ 四套独立塔基与动态弩机素材完整、透明且已接入运行时');
+console.log('✓ Stage 01/02/03/04/05/06/07/08 背景均为 3200×1440 连续超扫 JPEG 且已接入运行时');
+console.log('✓ Stage 01–03 共享玄甲龙鳌及后续关卡独立首领均为 600×480 透明素材且已接入运行时');
 console.log('✓ dist/game.js 与当前正式 src/game.ts 内存构建逐字节一致');
 console.log('✓ 循环背景音与环境音已从产物移除');
-console.log('✓ Stage 01 资源仅位于主包，Stage 02–08 原始资源完整且仅位于对应普通分包');
+console.log('✓ 逐关可达敌人、卡牌图标、背景、防御塔与战斗 VFX 均通过主包 + 当前分包资源契约');
+console.log('✓ 九种基础/命名敌人均使用独立 320×256 透明素材，不存在换名复用');
+console.log('✓ 基础箭矢、独立技能图标和 HUD 控件图标尺寸/透明通道完整且已接入运行时');
+console.log('✓ 全部战斗 VFX 均为独立 8 帧透明序列，不存在换名复用');
+console.log('✓ 六种跨关命名敌人仅构建到共享主包，其余关卡资源保留在对应普通分包');
 console.log(`✓ 主包 ${mainPackageBytes.toLocaleString('en-US')} bytes，低于 3,700,000 bytes 源码安全预算`);
 console.log(`✓ 分包 ${subpackageSizes.map(({ name, bytes }) => `${name} ${bytes.toLocaleString('en-US')} bytes`).join('；')}`);
 console.log(`✓ 全部包体 ${totalBytes.toLocaleString('en-US')} bytes，低于 30,000,000 bytes`);

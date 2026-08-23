@@ -27,12 +27,28 @@ import {
   type TowerId,
 } from '../core/contracts';
 import {
+  createDefaultTowerBuildZones,
+  TOWER_BREACH_CLEARANCE_PX,
+  TOWER_PLACEMENT_GRID_PX,
+  TOWER_SPACING_PX,
+  type TowerPlacementBlockReason,
+} from '../core/tower-placement';
+import {
   ImageCatalog,
   loadMiniGameSubpackage,
   preDownloadMiniGameSubpackage,
   type EndlessRecordV1,
   type MiniGameRuntime,
+  type RuntimeSize,
 } from '../platform/wechat';
+import {
+  MAIN_PACKAGE_ASSET_PATHS,
+  STAGE_ASSET_MANIFESTS,
+} from './asset-manifest';
+import {
+  assertBattleBundleAssetContract,
+  resolveCardIconAssetId,
+} from './asset-contract';
 
 export type InteractionId =
   | 'home-start'
@@ -46,6 +62,9 @@ export type InteractionId =
   | 'hud-strategy'
   | 'hud-overdrive'
   | 'hud-shop'
+  | 'tower-build'
+  | 'tower-build-cancel'
+  | `shop-shortcut:${0 | 1 | 2}`
   | 'shop-close'
   | 'shop-confirm'
   | 'strategy-close'
@@ -88,6 +107,7 @@ export interface BattleRenderState {
   selectedTowerId: TowerId;
   aimingTowerId?: TowerId;
   aimPoint?: DesignPoint;
+  towerPlacement?: TowerPlacementRenderState;
   reviveOrdinal?: number;
   victory: boolean;
   towerMetrics?: TowerMetricRenderState[];
@@ -100,6 +120,15 @@ export interface BattleRenderState {
   endlessSettlementReason?: EndlessSettlementReason;
   nextStageName?: string;
   error?: string;
+}
+
+export interface TowerPlacementRenderState {
+  kind: 'build' | 'move';
+  towerId: TowerId;
+  /** Snapped battle-world position. Omitted before the first battlefield touch. */
+  point?: DesignPoint;
+  valid?: boolean;
+  reason?: TowerPlacementBlockReason;
 }
 
 export interface TowerMetricRenderState {
@@ -127,6 +156,8 @@ interface VisualEffect {
   size?: number;
   rotationU16?: number;
 }
+
+type VisualEffectLayer = 'ground' | 'foreground';
 
 interface HitReaction {
   startedAt: number;
@@ -247,8 +278,9 @@ interface FloatingDamageText {
   duration: number;
 }
 
-const FLOATING_DAMAGE_LIMIT = 42;
-const FLOATING_DAMAGE_MERGE_MS = 85;
+const FLOATING_DAMAGE_LIMIT = 18;
+const FLOATING_DAMAGE_MERGE_MS = 190;
+const FLOATING_DAMAGE_PER_ENTITY_LIMIT = 2;
 const DAMAGE_SAMPLE_WINDOW_MS = 3_100;
 const DAMAGE_SAMPLE_LIMIT = 4_096;
 const VISUAL_EFFECT_LIMIT = 48;
@@ -257,104 +289,6 @@ const DEATH_GHOST_LIMIT = 18;
 const CAMERA_IMPULSE_LIMIT = 6;
 const COMBAT_CALLOUT_LIMIT = 6;
 const PROJECTILE_TRAIL_SPRITE_BUDGET = 18;
-
-const MAIN_PACKAGE_ASSET_PATHS: Record<string, string> = {
-  STAGE_01_BACKGROUND: 'assets/stage-01/background/STAGE_01_BACKGROUND.jpg',
-  MON_SWIFT_EEL: 'assets/stage-01/enemies/MON_SWIFT_EEL_BATTLE_V2.png',
-  MON_TIDE_IMP: 'assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
-  MON_SHELL_CRAB: 'assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
-  MON_REEF_GUARD: 'assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
-  MON_ABYSS_SCALE_GUARD: 'assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
-  MON_SOLAR_FORMATION_PRIEST: 'assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
-  MON_PHASE_SHELL_WEAVER: 'assets/stage-01/enemies/MON_SHELL_CRAB_BATTLE_V2.png',
-  MON_ETHEREAL_WALKER: 'assets/stage-01/enemies/MON_TIDE_IMP_BATTLE_V2.png',
-  TOWER_SOLAR_BASE: 'assets/stage-01/towers/TOWER_SOLAR_BASE_V2.png',
-  TOWER_SOLAR_HEAD: 'assets/stage-01/towers/TOWER_SOLAR_HEAD_V2.png',
-  TOWER_FROST_BASE: 'assets/stage-01/towers/TOWER_FROST_BASE_V2.png',
-  TOWER_FROST_HEAD: 'assets/stage-01/towers/TOWER_FROST_HEAD_V2.png',
-  TOWER_STORM_BASE: 'assets/stage-01/towers/TOWER_STORM_BASE_V2.png',
-  TOWER_STORM_HEAD: 'assets/stage-01/towers/TOWER_STORM_HEAD_V2.png',
-  MOD_DAMAGE: 'assets/stage-01/ui/icons/MOD_DAMAGE.png',
-  MOD_FREQUENCY: 'assets/stage-01/ui/icons/MOD_FREQUENCY.png',
-  MOD_ARROW_COUNT: 'assets/stage-01/ui/icons/MOD_ARROW_COUNT.png',
-  MOD_PENETRATION: 'assets/stage-01/ui/icons/MOD_PENETRATION.png',
-  MOD_CRIT_RATE: 'assets/stage-01/ui/icons/MOD_CRIT_RATE.png',
-  MOD_CRIT_DAMAGE: 'assets/stage-01/ui/icons/MOD_CRIT_DAMAGE.png',
-  VFX_SPAWN_PORTAL: 'assets/stage-01/vfx/VFX_BATTLE_SYSTEM_SET__SPAWN_PORTAL.png',
-  VFX_NORMAL_HIT: 'assets/stage-01/vfx/VFX_BASIC_COMBAT__NORMAL_HIT.png',
-  VFX_CRITICAL_HIT: 'assets/stage-01/vfx/VFX_BASIC_COMBAT__CRITICAL_HIT.png',
-  VFX_DEATH_DISSOLVE: 'assets/stage-01/vfx/VFX_BASIC_COMBAT__DEATH_DISSOLVE.png',
-  VFX_ARMOR_HIT: 'assets/stage-01/vfx/VFX_BASIC_COMBAT__ARMOR_HIT.png',
-  VFX_ARROW_TRAIL: 'assets/stage-01/vfx/VFX_BASIC_COMBAT__ARROW_TRAIL.png',
-  VFX_MULTISHOT_VOLLEY: 'assets/stage-01/vfx/VFX_BASIC_COMBAT__MULTISHOT_VOLLEY.png',
-  VFX_BREACH: 'assets/stage-01/vfx/VFX_BATTLE_SYSTEM_SET__BREACH.png',
-  VFX_DEFEAT: 'assets/stage-01/vfx/VFX_BATTLE_SYSTEM_SET__DEFEAT.png',
-  VFX_LEVEL_UP: 'assets/stage-01/vfx/VFX_BATTLE_SYSTEM_SET__LEVEL_UP.png',
-  VFX_REVIVE: 'assets/stage-01/vfx/VFX_BATTLE_SYSTEM_SET__REVIVE.png',
-  VFX_VICTORY: 'assets/stage-01/vfx/VFX_BATTLE_SYSTEM_SET__VICTORY.png',
-  VFX_REVIVE_PROTECT: 'assets/stage-01/vfx/VFX_STATUS_SET__REVIVE_PROTECT.png',
-};
-
-interface StageAssetManifest {
-  packageName?: string;
-  entries: Record<string, string>;
-}
-
-const STAGE_ASSET_MANIFESTS: Record<BattleStageId, StageAssetManifest> = {
-  STAGE_01: {
-    entries: {
-      STAGE_01_BACKGROUND: MAIN_PACKAGE_ASSET_PATHS.STAGE_01_BACKGROUND!,
-    },
-  },
-  STAGE_02: {
-    packageName: 'stage-02',
-    entries: {
-      STAGE_02_BACKGROUND: 'packages/stage-02/assets/stage-02/background/STAGE_02_BACKGROUND.jpg',
-    },
-  },
-  STAGE_03: {
-    packageName: 'stage-03',
-    entries: {
-      STAGE_03_BACKGROUND: 'packages/stage-03/assets/stage-03/background/STAGE_03_BACKGROUND.jpg',
-      MON_DRAGON_TORTOISE: 'packages/stage-03/assets/stage-03/enemies/MON_DRAGON_TORTOISE.png',
-    },
-  },
-  STAGE_04: {
-    packageName: 'stage-04',
-    entries: {
-      STAGE_04_BACKGROUND: 'packages/stage-04/assets/stage-04/background/STAGE_04_BACKGROUND.jpg',
-      MON_ABYSS_WYRM: 'packages/stage-04/assets/stage-04/enemies/MON_ABYSS_WYRM.png',
-    },
-  },
-  STAGE_05: {
-    packageName: 'stage-05',
-    entries: {
-      STAGE_05_BACKGROUND: 'packages/stage-05/assets/stage-05/background/STAGE_05_BACKGROUND.jpg',
-      MON_ECLIPSE_KUN_EMPEROR: 'packages/stage-05/assets/stage-05/enemies/MON_ECLIPSE_KUN_EMPEROR.png',
-    },
-  },
-  STAGE_06: {
-    packageName: 'stage-06',
-    entries: {
-      STAGE_06_BACKGROUND: 'packages/stage-06/assets/stage-06/background/STAGE_06_BACKGROUND.jpg',
-      MON_MIRAGE_MOTHER: 'packages/stage-06/assets/stage-06/enemies/MON_MIRAGE_MOTHER.png',
-    },
-  },
-  STAGE_07: {
-    packageName: 'stage-07',
-    entries: {
-      STAGE_07_BACKGROUND: 'packages/stage-07/assets/stage-07/background/STAGE_07_BACKGROUND.jpg',
-      MON_DUAL_PHASE_BOOK_MOTH: 'packages/stage-07/assets/stage-07/enemies/MON_DUAL_PHASE_BOOK_MOTH.png',
-    },
-  },
-  STAGE_08: {
-    packageName: 'stage-08',
-    entries: {
-      STAGE_08_BACKGROUND: 'packages/stage-08/assets/stage-08/background/STAGE_08_BACKGROUND.jpg',
-      BOSS_ABYSS_DRAGON: 'packages/stage-08/assets/stage-08/enemies/BOSS_ABYSS_DRAGON.png',
-    },
-  },
-};
 
 const QUALITY_COLOR: Record<CardDefinition['quality'], string> = {
   G: '#63d99b',
@@ -398,7 +332,7 @@ const ENEMY_VISUALS: Record<string, EnemyVisualDescriptor> = {
     width: 142, height: 108, sx: 2, sy: 20, sw: 314, sh: 206, followsRoute: false, role: 'armored',
   },
   MON_REEF_GUARD: {
-    width: 158, height: 120, sx: 2, sy: 20, sw: 314, sh: 206, followsRoute: false, role: 'armored', armorBadge: true,
+    width: 158, height: 120, sx: 0, sy: 0, sw: 320, sh: 256, followsRoute: false, role: 'armored', armorBadge: true,
   },
   MON_DRAGON_TORTOISE: {
     width: 250,
@@ -417,10 +351,10 @@ const ENEMY_VISUALS: Record<string, EnemyVisualDescriptor> = {
   MON_ABYSS_SCALE_GUARD: {
     width: 162,
     height: 124,
-    sx: 2,
-    sy: 20,
-    sw: 314,
-    sh: 206,
+    sx: 0,
+    sy: 0,
+    sw: 320,
+    sh: 256,
     followsRoute: false,
     role: 'armored',
     armorBadge: true,
@@ -442,10 +376,10 @@ const ENEMY_VISUALS: Record<string, EnemyVisualDescriptor> = {
   MON_SOLAR_FORMATION_PRIEST: {
     width: 150,
     height: 122,
-    sx: 28,
-    sy: 30,
-    sw: 238,
-    sh: 194,
+    sx: 0,
+    sy: 0,
+    sw: 320,
+    sh: 256,
     followsRoute: true,
     role: 'normal',
   },
@@ -466,10 +400,10 @@ const ENEMY_VISUALS: Record<string, EnemyVisualDescriptor> = {
   MON_PHASE_SHELL_WEAVER: {
     width: 164,
     height: 124,
-    sx: 2,
-    sy: 20,
-    sw: 314,
-    sh: 206,
+    sx: 0,
+    sy: 0,
+    sw: 320,
+    sh: 256,
     followsRoute: false,
     role: 'armored',
   },
@@ -490,12 +424,22 @@ const ENEMY_VISUALS: Record<string, EnemyVisualDescriptor> = {
   MON_ETHEREAL_WALKER: {
     width: 150,
     height: 120,
-    sx: 28,
-    sy: 30,
-    sw: 238,
-    sh: 194,
+    sx: 0,
+    sy: 0,
+    sw: 320,
+    sh: 256,
     followsRoute: true,
     role: 'normal',
+  },
+  MON_ABYSS_FLYING_EEL: {
+    width: 164,
+    height: 118,
+    sx: 0,
+    sy: 0,
+    sw: 320,
+    sh: 256,
+    followsRoute: true,
+    role: 'fast',
   },
   MON_DUAL_PHASE_BOOK_MOTH: {
     width: 292,
@@ -527,6 +471,8 @@ const ENEMY_VISUALS: Record<string, EnemyVisualDescriptor> = {
   },
 };
 
+export const ENEMY_VISUAL_ASSET_IDS = Object.freeze(Object.keys(ENEMY_VISUALS).sort());
+
 const HOME_STAGE_META: Record<BattleStageId, {
   eyebrow: string;
   description: string;
@@ -538,7 +484,7 @@ const HOME_STAGE_META: Record<BattleStageId, {
 }> = {
   STAGE_01: {
     eyebrow: '首关 · 五波试炼',
-    description: '敌军触及关印会扣关门耐久，耐久归零即失守；三塔会自动索敌。',
+    description: '敌军触及关印会扣关门耐久，耐久归零即失守；已部署箭塔会自动索敌。',
     lockedDescription: '',
     lockedStatus: '',
     shortStatus: '五波试炼',
@@ -547,7 +493,7 @@ const HOME_STAGE_META: Record<BattleStageId, {
   },
   STAGE_02: {
     eyebrow: '次关 · 夜潮来袭',
-    description: '礁港敌潮成群涌入；三塔自动分担火力，拖动可调整优先方向。',
+    description: '礁港敌潮成群涌入；已部署箭塔自动分担火力，拖动可调整优先方向。',
     lockedDescription: '击退第一关五波潮军后，东海夜战将自动解锁。',
     lockedStatus: '通关第一关后解锁',
     shortStatus: '密集夜潮',
@@ -610,13 +556,22 @@ const HOME_STAGE_META: Record<BattleStageId, {
   },
 };
 
+const HOME_STAGE_COMPACT_NAME: Record<BattleStageId, string> = {
+  STAGE_01: '练兵场',
+  STAGE_02: '礁港',
+  STAGE_03: '龙门',
+  STAGE_04: '潮眼',
+  STAGE_05: '天阙',
+  STAGE_06: '蜃庭',
+  STAGE_07: '残卷',
+  STAGE_08: '无尽',
+};
+
 interface BattleStageTheme {
   accent: string;
   secondary: string;
   surface: string;
   glow: string;
-  routeFill: string;
-  routeCore: string;
   breachLabel: string;
   breachMotif: 'battlement' | 'tide' | 'dragon' | 'abyss' | 'sun' | 'pearl' | 'scroll';
 }
@@ -627,8 +582,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#70d7d1',
     surface: '#17384a',
     glow: 'rgba(112, 215, 209, .27)',
-    routeFill: 'rgba(78, 178, 167, .19)',
-    routeCore: 'rgba(239, 203, 118, .56)',
     breachLabel: '陈塘关',
     breachMotif: 'battlement',
   },
@@ -637,8 +590,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#d9a85d',
     surface: '#102e43',
     glow: 'rgba(98, 220, 212, .27)',
-    routeFill: 'rgba(79, 190, 201, .19)',
-    routeCore: 'rgba(217, 168, 93, .54)',
     breachLabel: '东海港',
     breachMotif: 'tide',
   },
@@ -647,8 +598,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#e0b65a',
     surface: '#22284a',
     glow: 'rgba(182, 140, 244, .27)',
-    routeFill: 'rgba(126, 92, 184, .20)',
-    routeCore: 'rgba(224, 182, 90, .56)',
     breachLabel: '镇海门',
     breachMotif: 'dragon',
   },
@@ -657,8 +606,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#79e4d6',
     surface: '#3b2138',
     glow: 'rgba(255, 103, 91, .28)',
-    routeFill: 'rgba(113, 55, 91, .23)',
-    routeCore: 'rgba(118, 231, 211, .62)',
     breachLabel: '归墟印',
     breachMotif: 'abyss',
   },
@@ -667,8 +614,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#f2cf72',
     surface: '#3a292c',
     glow: 'rgba(255, 120, 103, .28)',
-    routeFill: 'rgba(204, 78, 70, .20)',
-    routeCore: 'rgba(255, 224, 143, .68)',
     breachLabel: '曜海印',
     breachMotif: 'sun',
   },
@@ -677,8 +622,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#71e2b0',
     surface: '#2a2130',
     glow: 'rgba(237, 95, 192, .30)',
-    routeFill: 'rgba(71, 196, 144, .20)',
-    routeCore: 'rgba(250, 196, 226, .68)',
     breachLabel: '太初印',
     breachMotif: 'pearl',
   },
@@ -687,8 +630,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#ead8af',
     surface: '#302725',
     glow: 'rgba(212, 90, 73, .28)',
-    routeFill: 'rgba(32, 27, 26, .31)',
-    routeCore: 'rgba(234, 216, 175, .68)',
     breachLabel: '山河印',
     breachMotif: 'scroll',
   },
@@ -697,8 +638,6 @@ const BATTLE_STAGE_THEME: Record<BattleStageId, BattleStageTheme> = {
     secondary: '#59e2d5',
     surface: '#171a3c',
     glow: 'rgba(113, 93, 240, .34)',
-    routeFill: 'rgba(67, 53, 132, .27)',
-    routeCore: 'rgba(91, 230, 216, .68)',
     breachLabel: '潮渊印',
     breachMotif: 'abyss',
   },
@@ -711,6 +650,18 @@ export interface HomeStageCardLayout {
   height: number;
   hitY: number;
   hitHeight: number;
+}
+
+export interface HomeBadgeLayout {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface HomeStageCompactPresentation {
+  name: string;
+  status: string;
 }
 
 export interface ViewportLayout {
@@ -763,6 +714,24 @@ export interface CardOverlayContentLayout {
   masteryMetricBaselines: readonly [number, number];
   deltaBaseline: number;
   actionTop: number;
+  actionHeight: number;
+}
+
+export interface ShopShortcutLayout {
+  compact: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  iconX: number;
+  iconY: number;
+  iconSize: number;
+  textX: number;
+  textWidth: number;
+  actionX: number;
+  actionWidth: number;
+  priceY: number;
+  statusY: number;
   actionHeight: number;
 }
 
@@ -828,6 +797,26 @@ export function resolveViewportLayout(width: number, height: number): ViewportLa
   };
 }
 
+export function resolveHomeBadgeLayout(
+  size: RuntimeSize,
+  viewport: ViewportLayout,
+): HomeBadgeLayout {
+  const layout: HomeBadgeLayout = { x: 1_590, y: 46, width: 250, height: 58 };
+  const gapPx = 12;
+  let screenRight = Math.min(size.width, size.safeArea.right) - gapPx;
+  const menu = size.menuButtonRect;
+  const screenTop = viewport.offsetY + layout.y * viewport.scale;
+  const screenBottom = viewport.offsetY + (layout.y + layout.height) * viewport.scale;
+  if (menu && menu.bottom >= screenTop && menu.top <= screenBottom) {
+    screenRight = Math.min(screenRight, menu.left - gapPx);
+  }
+  const designRight = Math.min(
+    layout.x + layout.width,
+    (screenRight - viewport.offsetX) / viewport.scale,
+  );
+  return { ...layout, x: designRight - layout.width };
+}
+
 export function resolveCardOverlayLayout(viewport: ViewportLayout): CardOverlayLayout {
   const extraWidth = Math.max(0, viewport.width - DESIGN_WIDTH);
   const cardWidth = Math.min(500, 420 + extraWidth / 6);
@@ -879,6 +868,53 @@ export function resolveHomeStageCardLayout(stageCount: number, index: number): H
   };
 }
 
+export function resolveHomeStageCompactPresentation(
+  stage: Pick<HomeStageRenderState, 'id' | 'unlocked' | 'completed'> & {
+    best?: readonly Pick<EndlessRecordRenderState, 'routeId'>[];
+  },
+): HomeStageCompactPresentation {
+  const endlessRecordCount = new Set(
+    stage.best?.map((record) => endlessRouteCode(record.routeId)),
+  ).size;
+  const status = !stage.unlocked
+    ? '未解锁'
+    : stage.id === 'STAGE_08'
+      ? endlessRecordCount > 0
+        ? `${Math.min(3, endlessRecordCount)}路已录`
+        : '待挑战'
+      : stage.completed
+        ? '已通关'
+        : '可挑战';
+  return {
+    name: HOME_STAGE_COMPACT_NAME[stage.id],
+    status,
+  };
+}
+
+const SHOP_SHORTCUT_COMPACT_MAX_SCALE = .45;
+
+export function resolveShopShortcutLayout(scale: number, index: number): ShopShortcutLayout {
+  const x = 42;
+  const y = 604 + index * 92;
+  return {
+    compact: scale <= SHOP_SHORTCUT_COMPACT_MAX_SCALE,
+    x,
+    y,
+    width: 330,
+    height: 82,
+    iconX: x + 46,
+    iconY: y + 17,
+    iconSize: 48,
+    textX: x + 100,
+    textWidth: 130,
+    actionX: x + 238,
+    actionWidth: 84,
+    priceY: y + 10,
+    statusY: y + 44,
+    actionHeight: 28,
+  };
+}
+
 export interface BreachSealPlacement extends DesignPoint {
   tangentRadians: number;
 }
@@ -889,6 +925,16 @@ export const BATTLE_BOTTOM_HUD_TOP = 918;
 export const BATTLE_BOTTOM_HUD_LEFT_RIGHT = 600;
 export const BATTLE_BOTTOM_HUD_RIGHT_LEFT = 1_510;
 export const BREACH_SEAL_VISUAL_RADIUS = 126;
+export const BATTLE_BACKGROUND_WORLD_RECT = {
+  x: -640,
+  y: -60,
+  width: 3_200,
+  height: 1_440,
+} as const;
+const TOWER_PREPARATION_CONTROL_X = 720;
+const TOWER_PREPARATION_CONTROL_Y = 816;
+const TOWER_PREPARATION_CONTROL_WIDTH = 480;
+const TOWER_PREPARATION_CONTROL_HEIGHT = 86;
 
 export function projectBattleWorldPoint(point: DesignPoint): DesignPoint {
   return {
@@ -927,6 +973,7 @@ const PROJECTILE_PALETTES = [
   { feather: '#f0b95a', trail: 'rgba(240,185,90,.30)' },
   { feather: '#53ddd7', trail: 'rgba(83,221,215,.30)' },
   { feather: '#a77aef', trail: 'rgba(167,122,239,.30)' },
+  { feather: '#ef7f86', trail: 'rgba(239,127,134,.30)' },
 ] as const;
 
 const TOWER_VISUALS = [
@@ -966,7 +1013,41 @@ const TOWER_VISUALS = [
     accent: '#a77aef',
     aura: 'rgba(167,122,239,.18)',
   },
+  {
+    baseAssetId: 'TOWER_CORAL_BASE',
+    headAssetId: 'TOWER_CORAL_HEAD',
+    baseSize: 210,
+    headSize: 180,
+    headPivotX: 115,
+    headPivotY: 192,
+    mountY: -32,
+    arrowLength: 108,
+    accent: '#ef7f86',
+    aura: 'rgba(239,127,134,.18)',
+  },
 ] as const;
+
+const TOWER_IDS = [0, 1, 2, 3] as const satisfies readonly TowerId[];
+
+function requiredBattleAssetIds(
+  stageId: BattleStageId,
+  bundle: BattleBundleV1,
+): readonly string[] {
+  const towerAssetIds = [...new Set(
+    TOWER_VISUALS.flatMap(({ baseAssetId, headAssetId }) => [baseAssetId, headAssetId]),
+  )];
+  return assertBattleBundleAssetContract(stageId, bundle, { towerAssetIds })
+    .map(({ assetId }) => assetId);
+}
+
+const TOWER_PLACEMENT_REASON_LABEL: Record<TowerPlacementBlockReason, string> = {
+  'invalid-point': '落点无效',
+  'outside-battlefield': '超出战场',
+  'outside-build-zone': '仅可放在亮区',
+  'route-clearance': '离怪物道路太近',
+  'tower-spacing': '离其他箭塔太近',
+  'breach-clearance': '关门周围需留通道',
+};
 
 function u16ToRadians(angle: number): number {
   return (angle / 65_536) * Math.PI * 2;
@@ -1170,6 +1251,25 @@ interface CardMetricPresentation {
   delta: string;
 }
 
+export interface ShopShortcutTextInput {
+  compact: boolean;
+  qualityName: string;
+  cardName: string;
+  metric?: CardMetricRow;
+  cost: number;
+  shortfall: number;
+  full: boolean;
+  atCap: boolean;
+  affordable: boolean;
+}
+
+export interface ShopShortcutTextPresentation {
+  title: string;
+  metric: string;
+  price: string;
+  status: string;
+}
+
 function cardPreviewIsUnchanged(card: CardDefinition, preview: TowerCardPreviewLike): boolean {
   const { before, after } = preview;
   switch (card.effectId) {
@@ -1287,6 +1387,43 @@ function cardMetricPresentation(
   }
 }
 
+function compactShortcutMetricValue(value: string): string {
+  return value.trim().replace(/\s+(?:支|次|座)$/u, '').replace(/%$/u, '');
+}
+
+export function resolveShopShortcutText(
+  input: ShopShortcutTextInput,
+): ShopShortcutTextPresentation {
+  const metric = input.metric;
+  const compactMetric = metric
+    ? (() => {
+        const before = compactShortcutMetricValue(metric.before);
+        const after = compactShortcutMetricValue(metric.after);
+        const suffix = metric.before.trim().endsWith('%') && metric.after.trim().endsWith('%')
+          ? '%'
+          : '';
+        const transition = `${before}→${after}${suffix}`;
+        return transition.length <= 7 ? transition : `→${after}${suffix}`;
+      })()
+    : input.cardName;
+  return {
+    title: input.compact ? input.cardName : `${input.qualityName} · ${input.cardName}`,
+    metric: input.compact
+      ? compactMetric
+      : metric
+        ? `${metric.label} ${metric.before} → ${metric.after}`
+        : input.cardName,
+    price: input.compact ? `${input.cost}功` : `${input.cost} 战功`,
+    status: input.full
+      ? input.compact ? '已满' : '本波已满'
+      : input.atCap
+        ? input.compact ? '封顶' : '已达上限'
+        : input.affordable
+          ? input.compact ? '可换' : '可兑换 ›'
+          : input.compact ? `差${input.shortfall}` : `还差 ${input.shortfall}`,
+  };
+}
+
 export class CanvasRenderer {
   private readonly runtime: MiniGameRuntime;
   private readonly context: any;
@@ -1308,8 +1445,12 @@ export class CanvasRenderer {
   private gateDamageFlashStartedAt = 0;
   private warPointsFlashStartedAt = 0;
   private warPointsFlashAmount = 0;
-  private activeTowerIds = new Set<TowerId>([0, 1, 2]);
-  private displayedTowerFacingsU16: TowerAimAnglesU16 = [0, 0, 0];
+  private shopReadyFlashStartedAt = 0;
+  private shopReadyFlashNewCount = 0;
+  private shopReadyFlashTotalCount = 0;
+  private activeTowerIds = new Set<TowerId>();
+  private towerPositions: DesignPoint[] = [];
+  private displayedTowerFacingsU16: TowerAimAnglesU16 = [0, 0, 0, 0];
   private towerFacingsInitialized = false;
   private lastTowerFacingAt = Date.now();
   private lastSnapshotTick = -1;
@@ -1318,8 +1459,13 @@ export class CanvasRenderer {
   private currentBattleSpeed: 1 | 2 = 1;
   private projectileTrailSpritesRemaining = PROJECTILE_TRAIL_SPRITE_BUDGET;
   private armoredRenderAssets = new Set<string>();
-  private readonly towerRecoilStartedAt = [0, 0, 0];
-  private readonly towerReleaseFacingsU16: Array<number | undefined> = [undefined, undefined, undefined];
+  private readonly towerRecoilStartedAt = [0, 0, 0, 0];
+  private readonly towerReleaseFacingsU16: Array<number | undefined> = [
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+  ];
   private viewport = resolveViewportLayout(DESIGN_WIDTH, DESIGN_HEIGHT);
   private scale = 1;
   private offsetX = 0;
@@ -1331,6 +1477,8 @@ export class CanvasRenderer {
     this.bundle = bundle;
     this.images = new ImageCatalog(runtime.canvas);
     this.cardsById = new Map(bundle.cards.map((card) => [card.id, card]));
+    this.towerPositions = bundle.route.towerAnchors.map((point) => ({ ...point }));
+    this.displayedTowerFacingsU16 = bundle.route.towerAnchors.map(() => 0);
     this.refreshEnemyPresentationCaches();
     this.updateViewport();
   }
@@ -1355,8 +1503,10 @@ export class CanvasRenderer {
   async loadStageAssets(
     stageId: BattleStageId,
     onProgress?: (progress: number) => void,
+    bundle: BattleBundleV1 = this.bundle,
   ): Promise<void> {
-    if (this.isStageAssetsLoaded(stageId)) {
+    const requiredAssetIds = requiredBattleAssetIds(stageId, bundle);
+    if (this.isStageAssetsLoaded(stageId, bundle)) {
       onProgress?.(1);
       return;
     }
@@ -1368,7 +1518,7 @@ export class CanvasRenderer {
       onProgress?.(0);
       await this.loadAssets();
       if (stageId === 'STAGE_01') {
-        if (!this.isStageAssetsLoaded(stageId)) throw new Error('第一关必需图片未完整加载');
+        if (!this.isStageAssetsLoaded(stageId, bundle)) throw new Error('第一关必需图片未完整加载');
         onProgress?.(1);
         return;
       }
@@ -1378,8 +1528,10 @@ export class CanvasRenderer {
         (progress) => onProgress?.(progress * 0.9),
       );
       await this.images.load(manifest.entries);
-      if (!this.isStageAssetsLoaded(stageId)) {
-        throw new Error(`关卡 ${stageId} 的必需图片未完整加载`);
+      if (!this.isStageAssetsLoaded(stageId, bundle)) {
+        const missing = requiredAssetIds.filter((assetId) => !this.images.has(assetId));
+        const suffix = missing.length > 0 ? `：${missing.join('、')}` : '';
+        throw new Error(`关卡 ${stageId} 的必需图片未完整加载${suffix}`);
       }
       onProgress?.(1);
     })();
@@ -1391,11 +1543,17 @@ export class CanvasRenderer {
     }
   }
 
-  isStageAssetsLoaded(stageId: BattleStageId): boolean {
-    return (
-      this.images.hasAll(Object.keys(MAIN_PACKAGE_ASSET_PATHS)) &&
-      this.images.hasAll(Object.keys(STAGE_ASSET_MANIFESTS[stageId].entries))
-    );
+  isStageAssetsLoaded(stageId: BattleStageId, bundle: BattleBundleV1 = this.bundle): boolean {
+    try {
+      const requiredAssetIds = requiredBattleAssetIds(stageId, bundle);
+      return (
+        this.images.hasAll(Object.keys(MAIN_PACKAGE_ASSET_PATHS)) &&
+        this.images.hasAll(Object.keys(STAGE_ASSET_MANIFESTS[stageId].entries)) &&
+        this.images.hasAll(requiredAssetIds)
+      );
+    } catch {
+      return false;
+    }
   }
 
   releaseStageAssets(stageId: BattleStageId): void {
@@ -1426,8 +1584,10 @@ export class CanvasRenderer {
     this.gateDamageFlashStartedAt = 0;
     this.warPointsFlashStartedAt = 0;
     this.warPointsFlashAmount = 0;
-    this.activeTowerIds = new Set<TowerId>([0, 1, 2]);
-    this.displayedTowerFacingsU16 = [0, 0, 0];
+    this.clearShopAffordableNotice();
+    this.activeTowerIds = new Set<TowerId>();
+    this.towerPositions = bundle.route.towerAnchors.map((point) => ({ ...point }));
+    this.displayedTowerFacingsU16 = bundle.route.towerAnchors.map(() => 0);
     this.towerFacingsInitialized = false;
     this.lastTowerFacingAt = Date.now();
     this.lastSnapshotTick = -1;
@@ -1442,6 +1602,19 @@ export class CanvasRenderer {
   resize(): void {
     this.runtime.resize();
     this.updateViewport();
+  }
+
+  clearShopAffordableNotice(): void {
+    this.shopReadyFlashStartedAt = 0;
+    this.shopReadyFlashNewCount = 0;
+    this.shopReadyFlashTotalCount = 0;
+  }
+
+  notifyShopAffordable(newlyAffordable: number, totalAffordable: number): void {
+    if (!Number.isSafeInteger(newlyAffordable) || newlyAffordable <= 0) return;
+    this.shopReadyFlashStartedAt = Date.now();
+    this.shopReadyFlashNewCount = newlyAffordable;
+    this.shopReadyFlashTotalCount = Math.max(newlyAffordable, totalAffordable);
   }
 
   toDesignPoint(clientX: number, clientY: number): DesignPoint {
@@ -1476,10 +1649,18 @@ export class CanvasRenderer {
   }
 
   isBattleHudPoint(point: DesignPoint): boolean {
-    return point.y <= 122 || (
+    return point.y <= 122 ||
+      (point.x >= 30 && point.x <= 372 && point.y >= 568 && point.y <= 892) || (
       point.y >= BATTLE_BOTTOM_HUD_TOP &&
       (point.x <= BATTLE_BOTTOM_HUD_LEFT_RIGHT || point.x >= BATTLE_BOTTOM_HUD_RIGHT_LEFT)
     );
+  }
+
+  isWavePreparationPanelPoint(point: DesignPoint): boolean {
+    return point.x >= TOWER_PREPARATION_CONTROL_X - 10 &&
+      point.x <= TOWER_PREPARATION_CONTROL_X + TOWER_PREPARATION_CONTROL_WIDTH + 10 &&
+      point.y >= TOWER_PREPARATION_CONTROL_Y - 10 &&
+      point.y <= TOWER_PREPARATION_CONTROL_Y + TOWER_PREPARATION_CONTROL_HEIGHT + 10;
   }
 
   hitTestTower(point: DesignPoint): TowerId | undefined {
@@ -1487,17 +1668,17 @@ export class CanvasRenderer {
     const radius = Math.max(108, Math.min(132, 40 / Math.max(this.scale, 0.01))) /
       BATTLE_WORLD_SCALE;
     let closest: { towerId: TowerId; distanceSquared: number } | undefined;
-    this.bundle.route.towerAnchors.forEach((anchor, index) => {
-      const towerId = index as TowerId;
-      if (!this.activeTowerIds.has(towerId)) return;
+    for (const towerId of this.activeTowerIds) {
+      const anchor = this.towerPositions[towerId];
+      if (!anchor) continue;
       const deltaX = worldPoint.x - anchor.x;
       const deltaY = worldPoint.y - anchor.y;
       const distanceSquared = deltaX * deltaX + deltaY * deltaY;
-      if (distanceSquared > radius * radius) return;
+      if (distanceSquared > radius * radius) continue;
       if (!closest || distanceSquared < closest.distanceSquared) {
         closest = { towerId, distanceSquared };
       }
-    });
+    }
     return closest?.towerId;
   }
 
@@ -1549,6 +1730,32 @@ export class CanvasRenderer {
         Math.max(0, latestTick - event.tick) * (1_000 / TICKS_PER_SECOND) / this.currentBattleSpeed,
       );
       const startedAt = now - eventAgeMs;
+      if (event.type === 'TOWER_BUILT' || event.type === 'TOWER_MOVED') {
+        this.towerPositions[event.towerId] = { ...event.point };
+        if (event.type === 'TOWER_BUILT') this.activeTowerIds.add(event.towerId);
+        const accent = PROJECTILE_PALETTES[event.towerId]?.feather ?? '#72ead5';
+        this.effects.push({
+          x: event.point.x,
+          y: event.point.y - 26,
+          startedAt,
+          duration: event.type === 'TOWER_BUILT' ? 760 : 520,
+          color: accent,
+          kind: 'sprite',
+          assetId: 'VFX_REVIVE_PROTECT',
+          size: event.type === 'TOWER_BUILT' ? 230 : 180,
+        });
+        this.combatCallouts.push({
+          text: event.type === 'TOWER_BUILT'
+            ? `${event.towerId + 1} 号箭塔部署 · -${event.cost} 战功`
+            : `${event.towerId + 1} 号箭塔移阵完成`,
+          x: event.point.x,
+          y: event.point.y - 12,
+          startedAt,
+          duration: 1_050,
+          color: accent,
+        });
+        continue;
+      }
       if (event.type === 'ATTACK_RELEASE') {
         if (event.towerId >= 0 && event.towerId < this.towerRecoilStartedAt.length) {
           this.towerRecoilStartedAt[event.towerId] = startedAt;
@@ -1592,9 +1799,10 @@ export class CanvasRenderer {
         ? this.towerCenter()
         : resolveBreachSealPlacement(this.bundle.route);
       const point = event.type === 'BREACH' ? fallback : position ?? fallback;
-      const visualPoint = event.type === 'SPAWN'
-        ? { x: point.x, y: Math.max(66, point.y) }
-        : point;
+      // Spawn VFX must stay on the authored route entry. Clamping it below the
+      // top HUD detached the portal from the enemy and made ground units look
+      // as if they were dropping out of the interface.
+      const visualPoint = point;
       if (event.type === 'HIT') {
         const hit = event as HitEventWithRenderData;
         const hitPoint = {
@@ -1658,7 +1866,8 @@ export class CanvasRenderer {
         continue;
       }
       if (event.type === 'TOWER_UNLOCKED') {
-        const anchor = this.bundle.route.towerAnchors[event.towerId];
+        const anchor = this.towerPositions[event.towerId];
+        if (!anchor) continue;
         this.effects.push({
           x: anchor.x,
           y: anchor.y - 26,
@@ -1819,7 +2028,8 @@ export class CanvasRenderer {
         continue;
       }
       if (event.type === 'OVERDRIVE_ACTIVATED') {
-        const anchor = this.bundle.route.towerAnchors[event.towerId];
+        const anchor = this.towerPositions[event.towerId];
+        if (!anchor) continue;
         this.effects.push({
           x: anchor.x,
           y: anchor.y - 34,
@@ -1853,9 +2063,11 @@ export class CanvasRenderer {
         this.effects.push({
           ...this.findBossPoint(snapshot.entities),
           startedAt,
-          duration: 520,
+          duration: 720,
           color: '#b79aff',
-          kind: 'burst',
+          kind: 'sprite',
+          assetId: 'VFX_BREACH',
+          size: 250,
         });
         continue;
       }
@@ -1863,9 +2075,11 @@ export class CanvasRenderer {
         this.effects.push({
           ...this.towerCenter(),
           startedAt,
-          duration: 620,
+          duration: 780,
           color: '#b79aff',
-          kind: 'revive',
+          kind: 'sprite',
+          assetId: 'VFX_SPAWN_PORTAL',
+          size: 300,
         });
         continue;
       }
@@ -1905,8 +2119,9 @@ export class CanvasRenderer {
   }
 
   private towerMuzzlePoint(towerId: TowerId, rotationU16: number): DesignPoint {
-    const anchor = this.bundle.route.towerAnchors[towerId];
+    const anchor = this.towerPositions[towerId];
     const visual = TOWER_VISUALS[towerId];
+    if (!anchor) return this.towerCenter();
     const angle = u16ToRadians(rotationU16);
     const reach = visual.arrowLength * .82;
     return {
@@ -2037,7 +2252,7 @@ export class CanvasRenderer {
   }
 
   private recordDamageHit(hit: HitEventWithRenderData, point: DesignPoint, now: number): void {
-    const towerId = hit.towerId === 0 || hit.towerId === 1 || hit.towerId === 2
+    const towerId = TOWER_IDS.includes(hit.towerId)
       ? hit.towerId
       : 0;
     const damageMilli = Math.max(0, hit.damageMilli);
@@ -2048,21 +2263,33 @@ export class CanvasRenderer {
     this.pruneDamageSamples(now);
 
     const penetrating = (hit.penetrationIndex ?? 0) > 0;
+    const mergeInto = (existing: FloatingDamageText): void => {
+      existing.damageMilli += damageMilli;
+      existing.hitCount += 1;
+      existing.x = point.x;
+      existing.y = point.y;
+      existing.towerId = towerId;
+      existing.critical = existing.critical || hit.critical;
+      existing.penetrating = existing.penetrating || penetrating;
+      if (hit.mitigation !== 'none') existing.mitigation = hit.mitigation;
+      existing.startedAt = now;
+      existing.duration = existing.critical ? 660 : 560;
+    };
+    const sameEntityIndices: number[] = [];
     for (let index = this.floatingDamageTexts.length - 1; index >= 0; index -= 1) {
       const existing = this.floatingDamageTexts[index];
-      if (!existing || now - existing.startedAt > FLOATING_DAMAGE_MERGE_MS) continue;
-      if (
-        existing.entityId === hit.entityId &&
-        existing.critical === hit.critical &&
-        existing.penetrating === penetrating &&
-        existing.mitigation === hit.mitigation
-      ) {
-        existing.damageMilli += damageMilli;
-        existing.hitCount += 1;
-        existing.x = point.x;
-        existing.y = point.y;
-        existing.towerId = towerId;
-        existing.startedAt = now;
+      if (!existing || existing.entityId !== hit.entityId) continue;
+      sameEntityIndices.push(index);
+      if (now - existing.startedAt <= FLOATING_DAMAGE_MERGE_MS) {
+        mergeInto(existing);
+        return;
+      }
+    }
+
+    if (sameEntityIndices.length >= FLOATING_DAMAGE_PER_ENTITY_LIMIT) {
+      const newest = this.floatingDamageTexts[sameEntityIndices[0] ?? -1];
+      if (newest) {
+        mergeInto(newest);
         return;
       }
     }
@@ -2085,7 +2312,7 @@ export class CanvasRenderer {
       penetrating,
       mitigation: hit.mitigation,
       startedAt: now,
-      duration: hit.critical ? 700 : 610,
+      duration: hit.critical ? 660 : 560,
     });
   }
 
@@ -2105,7 +2332,7 @@ export class CanvasRenderer {
     now = Date.now(),
   ): TowerMetricRenderState[] {
     if (provided && provided.length > 0) {
-      return ([0, 1, 2] as const).map((towerId) => {
+      return TOWER_IDS.map((towerId) => {
         const metric = provided.find((candidate) => candidate.towerId === towerId);
         const active = this.activeTowerIds.has(towerId);
         return {
@@ -2117,7 +2344,7 @@ export class CanvasRenderer {
     }
 
     this.pruneDamageSamples(now);
-    return ([0, 1, 2] as const).map((towerId) => ({
+    return TOWER_IDS.map((towerId) => ({
       towerId,
       damageLast1sMilli: this.activeTowerIds.has(towerId) ? this.damageSamples.reduce(
         (sum, sample) => sum + (sample.towerId === towerId && now - sample.happenedAt <= 1_000
@@ -2180,12 +2407,21 @@ export class CanvasRenderer {
     this.drawSeal(92, 82, 48, '守');
     this.text('原创海防神话 · 七关战役 · 无尽挑战', 165, 58, 20, '#76dfdb', 'left', 600);
     this.text('东海潮生，关城告急', 165, 92, 24, '#f2e6c6', 'left', 700);
-    this.pill(1590, 46, 250, 58, '微信小游戏版', '#102b42', '#6fded8');
+    const homeBadge = resolveHomeBadgeLayout(this.runtime.size(), this.viewport);
+    this.pill(
+      homeBadge.x,
+      homeBadge.y,
+      homeBadge.width,
+      homeBadge.height,
+      '微信小游戏版',
+      '#102b42',
+      '#6fded8',
+    );
 
     this.text('CHENTANG PASS', 118, 260, 24, 'rgba(130,224,219,.84)', 'left', 600);
     this.text(GAME_TITLE_LINES[0], 108, 405, 118, '#f5edda', 'left', 800);
     this.text(GAME_TITLE_LINES[1], 108, 530, 132, '#f0c56e', 'left', 800);
-    this.text('三塔同心 · 万箭镇潮', 122, 592, 29, 'rgba(239,245,236,.82)', 'left', 600);
+    this.text('群塔同心 · 万箭镇潮', 122, 592, 29, 'rgba(239,245,236,.82)', 'left', 600);
     this.drawGuardianOrb(128, 670, '火', '#e76d4d');
     this.drawGuardianOrb(225, 670, '霜', '#6edbdd');
     this.drawGuardianOrb(322, 670, '岚', '#9c80ef');
@@ -2195,6 +2431,7 @@ export class CanvasRenderer {
       const { x, y, width, height } = layout;
       const selected = stage.id === selectedStage.id;
       const usesCompactCardRail = state.stages.length >= 7;
+      const hidesCompactStageNumber = usesCompactCardRail && this.scale <= .35;
       const endlessRecordCount = new Set(
         stage.best?.map((record) => endlessRouteCode(record.routeId)),
       ).size;
@@ -2207,6 +2444,11 @@ export class CanvasRenderer {
               ? '已通关 · 可重玩'
               : HOME_STAGE_META[stage.id].shortStatus)
         : HOME_STAGE_META[stage.id].lockedStatus;
+      const compactPresentation = usesCompactCardRail
+        ? resolveHomeStageCompactPresentation(stage)
+        : undefined;
+      const visibleName = compactPresentation?.name ?? stage.name;
+      const visibleStatus = compactPresentation?.status ?? status;
       const stageColor = selected ? '#efc56b' : stage.unlocked ? '#5bdad7' : '#536778';
       this.context.fillStyle = selected ? 'rgba(9,29,48,.96)' : 'rgba(5,18,35,.86)';
       this.context.strokeStyle = stageColor;
@@ -2216,29 +2458,48 @@ export class CanvasRenderer {
       this.context.stroke();
       const nameX = usesCompactCardRail ? x + width / 2 : x + (state.stages.length >= 6 ? 45 : 52);
       const numberY = y + 60;
-      this.text(
-        this.stageNumber(stage.id),
-        x + 11,
-        usesCompactCardRail ? y + 23 : numberY,
-        usesCompactCardRail ? (stage.id === 'STAGE_08' ? 20 : 13) : 28,
-        `${stageColor}80`,
-        'left',
-        800,
-      );
+      if (!hidesCompactStageNumber) {
+        this.text(
+          this.stageNumber(stage.id),
+          x + 11,
+          usesCompactCardRail ? y + 23 : numberY,
+          usesCompactCardRail ? (stage.id === 'STAGE_08' ? 20 : 13) : 28,
+          `${stageColor}80`,
+          'left',
+          800,
+        );
+      }
       this.context.save();
       this.context.beginPath();
-      this.context.rect(usesCompactCardRail ? x + 8 : nameX - 2, y + 8, usesCompactCardRail ? width - 16 : width - (nameX - x) - 8, height - 16);
+      this.context.rect(
+        usesCompactCardRail ? x + 8 : nameX - 2,
+        usesCompactCardRail ? y + 4 : y + 8,
+        usesCompactCardRail ? width - 16 : width - (nameX - x) - 8,
+        usesCompactCardRail ? height - 8 : height - 16,
+      );
       this.context.clip();
-      this.text(stage.name, nameX, y + 43, usesCompactCardRail ? 16 : state.stages.length >= 6 ? 17 : 18, stage.unlocked ? '#f3ead6' : '#82909a', usesCompactCardRail ? 'center' : 'left', 700, 10);
-      this.text(
-        status,
+      const textWidth = usesCompactCardRail ? width - 16 : width - (nameX - x) - 8;
+      this.fitText(
+        visibleName,
         nameX,
-        y + 72,
-        usesCompactCardRail ? (stage.id === 'STAGE_08' ? 11 : 12) : 13,
+        usesCompactCardRail ? y + 42 : y + 43,
+        textWidth,
+        usesCompactCardRail ? 17 : state.stages.length >= 6 ? 17 : 18,
+        stage.unlocked ? '#f3ead6' : '#82909a',
+        usesCompactCardRail ? 'center' : 'left',
+        700,
+        usesCompactCardRail ? 11 : 10,
+      );
+      this.fitText(
+        visibleStatus,
+        nameX,
+        usesCompactCardRail ? y + 80 : y + 72,
+        textWidth,
+        usesCompactCardRail ? 12 : 13,
         stageColor,
         usesCompactCardRail ? 'center' : 'left',
         600,
-        8,
+        usesCompactCardRail ? 9 : 8,
       );
       this.context.restore();
       if (stage.unlocked) {
@@ -2333,11 +2594,10 @@ export class CanvasRenderer {
     this.currentBattleSpeed = state.hud.speed;
     this.currentArrowCount = this.resolveTowerStats(state.hud).current.arrowCount;
     const projectedActiveTowerIds = Array.isArray(state.hud.activeTowerIds)
-      ? state.hud.activeTowerIds.filter(
-        (towerId): towerId is TowerId => towerId === 0 || towerId === 1 || towerId === 2,
-      )
-      : ([0, 1, 2] as TowerId[]);
+      ? state.hud.activeTowerIds.filter((towerId) => TOWER_IDS.includes(towerId))
+      : [];
     this.activeTowerIds = new Set<TowerId>(projectedActiveTowerIds);
+    this.towerPositions = state.hud.towerPositions.map((point) => ({ ...point }));
     const towerMetrics = this.resolveTowerMetrics(state.towerMetrics);
     const displayedTowerFacings = this.updateTowerFacings(
       state.snapshot.towerFacingsU16,
@@ -2354,24 +2614,31 @@ export class CanvasRenderer {
     );
     this.context.save();
     this.applyBattleWorldTransform(cameraOffset);
-    this.drawRoute();
+    if (state.towerPlacement) this.drawTowerPlacementGuide(state.towerPlacement);
     this.drawAimGuides(
       state.hud.aimAnglesU16,
       state.selectedTowerId,
       state.aimingTowerId,
       state.aimPoint,
+      state.towerPlacement,
     );
     this.drawBreachSeal();
-    this.drawTowers(displayedTowerFacings, state.selectedTowerId);
+    const effectFrameTime = Date.now();
+    this.drawEffects('ground', effectFrameTime);
+    this.drawTowers(displayedTowerFacings, state.selectedTowerId, state.towerPlacement);
     this.drawEntities(state.snapshot.entities);
     this.drawDeathGhosts();
-    this.drawEffects();
+    this.drawEffects('foreground', effectFrameTime);
     this.drawFloatingDamageTexts();
     this.drawCombatCallouts();
+    if (state.towerPlacement) this.drawTowerPlacementGhost(state.towerPlacement);
     this.context.restore();
     const cardOverlayVisible = state.hud.flowState === 'offer-pending' && state.hud.activeOffer;
     if (!cardOverlayVisible) {
       this.drawHud(state.hud, state.muted, state.selectedTowerId, towerMetrics);
+    }
+    if (state.hud.flowState === 'preparing') {
+      this.drawTowerPreparationControls(state.hud, state.towerPlacement);
     }
 
     const endlessHud = resolveEndlessHud(state.hud);
@@ -2467,8 +2734,13 @@ export class CanvasRenderer {
         this.viewport.width,
         this.viewport.height,
       );
-      this.drawBackgroundExtensions(background);
-      this.context.drawImage(background, 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
+      this.context.drawImage(
+        background,
+        BATTLE_BACKGROUND_WORLD_RECT.x,
+        BATTLE_BACKGROUND_WORLD_RECT.y,
+        BATTLE_BACKGROUND_WORLD_RECT.width,
+        BATTLE_BACKGROUND_WORLD_RECT.height,
+      );
       return;
     }
     const gradient = this.context.createLinearGradient(0, this.viewport.top, 0, this.viewport.bottom);
@@ -2484,7 +2756,7 @@ export class CanvasRenderer {
     );
   }
 
-  private drawBattleBackground(cameraOffset: DesignPoint): void {
+  private drawBattleBackground(_cameraOffset: DesignPoint): void {
     const background = this.images.get(this.bundle.stage.backgroundAssetId);
     if (!background) {
       this.drawBackground();
@@ -2499,27 +2771,18 @@ export class CanvasRenderer {
       this.viewport.height,
     );
 
-    const worldTopLeft = unprojectBattleWorldPoint({
-      x: this.viewport.left - cameraOffset.x,
-      y: this.viewport.top - cameraOffset.y,
-    });
-    const worldBottomRight = unprojectBattleWorldPoint({
-      x: this.viewport.right - cameraOffset.x,
-      y: this.viewport.bottom - cameraOffset.y,
-    });
-
     this.context.save();
-    this.applyBattleWorldTransform(cameraOffset);
-    this.drawBackgroundExtensions(
+    // Keep the backdrop stable during hit shake. The foreground receives the
+    // camera offset separately, creating a restrained parallax instead of
+    // exposing the overscan edge.
+    this.applyBattleWorldTransform({ x: 0, y: 0 });
+    this.context.drawImage(
       background,
-      {
-        left: worldTopLeft.x,
-        top: worldTopLeft.y,
-        right: worldBottomRight.x,
-        bottom: worldBottomRight.y,
-      },
+      BATTLE_BACKGROUND_WORLD_RECT.x,
+      BATTLE_BACKGROUND_WORLD_RECT.y,
+      BATTLE_BACKGROUND_WORLD_RECT.width,
+      BATTLE_BACKGROUND_WORLD_RECT.height,
     );
-    this.context.drawImage(background, 0, 0, DESIGN_WIDTH, DESIGN_HEIGHT);
     this.context.restore();
   }
 
@@ -2528,228 +2791,6 @@ export class CanvasRenderer {
     this.context.translate(BATTLE_WORLD_PIVOT.x, BATTLE_WORLD_PIVOT.y);
     this.context.scale(BATTLE_WORLD_SCALE, BATTLE_WORLD_SCALE);
     this.context.translate(-BATTLE_WORLD_PIVOT.x, -BATTLE_WORLD_PIVOT.y);
-  }
-
-  private drawBackgroundExtensions(
-    background: any,
-    bounds: Pick<ViewportLayout, 'left' | 'top' | 'right' | 'bottom'> = this.viewport,
-  ): void {
-    const leftWidth = Math.max(0, -bounds.left);
-    if (leftWidth > 0) {
-      const sourceWidth = Math.min(DESIGN_WIDTH, leftWidth);
-      this.drawReflectedBackgroundRegion(
-        background,
-        0,
-        0,
-        sourceWidth,
-        DESIGN_HEIGHT,
-        -leftWidth,
-        0,
-        leftWidth,
-        DESIGN_HEIGHT,
-        true,
-        false,
-      );
-    }
-
-    const rightWidth = Math.max(0, bounds.right - DESIGN_WIDTH);
-    if (rightWidth > 0) {
-      const sourceWidth = Math.min(DESIGN_WIDTH, rightWidth);
-      this.drawReflectedBackgroundRegion(
-        background,
-        DESIGN_WIDTH - sourceWidth,
-        0,
-        sourceWidth,
-        DESIGN_HEIGHT,
-        DESIGN_WIDTH,
-        0,
-        rightWidth,
-        DESIGN_HEIGHT,
-        true,
-        false,
-      );
-    }
-
-    const topHeight = Math.max(0, -bounds.top);
-    if (topHeight > 0) {
-      const sourceHeight = Math.min(DESIGN_HEIGHT, topHeight);
-      this.drawReflectedBackgroundRegion(
-        background,
-        0,
-        0,
-        DESIGN_WIDTH,
-        sourceHeight,
-        0,
-        -topHeight,
-        DESIGN_WIDTH,
-        topHeight,
-        false,
-        true,
-      );
-    }
-
-    const bottomHeight = Math.max(0, bounds.bottom - DESIGN_HEIGHT);
-    if (bottomHeight > 0) {
-      const sourceHeight = Math.min(DESIGN_HEIGHT, bottomHeight);
-      this.drawReflectedBackgroundRegion(
-        background,
-        0,
-        DESIGN_HEIGHT - sourceHeight,
-        DESIGN_WIDTH,
-        sourceHeight,
-        0,
-        DESIGN_HEIGHT,
-        DESIGN_WIDTH,
-        bottomHeight,
-        false,
-        true,
-      );
-    }
-
-    const horizontalExtensions = [
-      leftWidth > 0
-        ? {
-          sourceX: 0,
-          sourceWidth: Math.min(DESIGN_WIDTH, leftWidth),
-          targetX: -leftWidth,
-          targetWidth: leftWidth,
-        }
-        : undefined,
-      rightWidth > 0
-        ? {
-          sourceX: DESIGN_WIDTH - Math.min(DESIGN_WIDTH, rightWidth),
-          sourceWidth: Math.min(DESIGN_WIDTH, rightWidth),
-          targetX: DESIGN_WIDTH,
-          targetWidth: rightWidth,
-        }
-        : undefined,
-    ].filter((extension): extension is {
-      sourceX: number;
-      sourceWidth: number;
-      targetX: number;
-      targetWidth: number;
-    } => extension !== undefined);
-    const verticalExtensions = [
-      topHeight > 0
-        ? {
-          sourceY: 0,
-          sourceHeight: Math.min(DESIGN_HEIGHT, topHeight),
-          targetY: -topHeight,
-          targetHeight: topHeight,
-        }
-        : undefined,
-      bottomHeight > 0
-        ? {
-          sourceY: DESIGN_HEIGHT - Math.min(DESIGN_HEIGHT, bottomHeight),
-          sourceHeight: Math.min(DESIGN_HEIGHT, bottomHeight),
-          targetY: DESIGN_HEIGHT,
-          targetHeight: bottomHeight,
-        }
-        : undefined,
-    ].filter((extension): extension is {
-      sourceY: number;
-      sourceHeight: number;
-      targetY: number;
-      targetHeight: number;
-    } => extension !== undefined);
-    for (const horizontal of horizontalExtensions) {
-      for (const vertical of verticalExtensions) {
-        this.drawReflectedBackgroundRegion(
-          background,
-          horizontal.sourceX,
-          vertical.sourceY,
-          horizontal.sourceWidth,
-          vertical.sourceHeight,
-          horizontal.targetX,
-          vertical.targetY,
-          horizontal.targetWidth,
-          vertical.targetHeight,
-          true,
-          true,
-        );
-      }
-    }
-  }
-
-  private drawReflectedBackgroundRegion(
-    background: any,
-    sourceX: number,
-    sourceY: number,
-    sourceWidth: number,
-    sourceHeight: number,
-    targetX: number,
-    targetY: number,
-    targetWidth: number,
-    targetHeight: number,
-    flipX: boolean,
-    flipY: boolean,
-  ): void {
-    this.context.save();
-    this.context.translate(
-      targetX + (flipX ? targetWidth : 0),
-      targetY + (flipY ? targetHeight : 0),
-    );
-    this.context.scale(flipX ? -1 : 1, flipY ? -1 : 1);
-    this.context.drawImage(
-      background,
-      sourceX,
-      sourceY,
-      sourceWidth,
-      sourceHeight,
-      0,
-      0,
-      targetWidth,
-      targetHeight,
-    );
-    this.context.restore();
-  }
-
-  private drawRoute(): void {
-    const points = this.bundle.route.points;
-    const theme = BATTLE_STAGE_THEME[this.bundle.stage.id];
-    const draw = (width: number, color: string) => {
-      const first = points[0];
-      if (!first) return;
-      this.context.beginPath();
-      this.context.moveTo(first.x, first.y);
-      for (const point of points.slice(1)) this.context.lineTo(point.x, point.y);
-      this.context.lineCap = 'round';
-      this.context.lineJoin = 'round';
-      this.context.lineWidth = width;
-      this.context.strokeStyle = color;
-      this.context.stroke();
-    };
-    draw(96, 'rgba(2, 23, 37, .72)');
-    draw(68, theme.routeFill);
-    draw(4, theme.routeCore);
-
-    const seal = resolveBreachSealPlacement(this.bundle.route);
-    this.context.save();
-    this.context.translate(seal.x, seal.y);
-    this.context.rotate(seal.tangentRadians);
-    const intake = this.context.createLinearGradient(-150, 0, 18, 0);
-    intake.addColorStop(0, 'rgba(2, 16, 30, 0)');
-    intake.addColorStop(.45, 'rgba(2, 16, 30, .10)');
-    intake.addColorStop(1, 'rgba(2, 12, 26, .48)');
-    this.context.fillStyle = intake;
-    this.context.beginPath();
-    this.context.moveTo(-150, -31);
-    this.context.lineTo(14, -17);
-    this.context.lineTo(14, 17);
-    this.context.lineTo(-150, 31);
-    this.context.closePath();
-    this.context.fill();
-    this.context.globalAlpha = .42;
-    this.context.strokeStyle = theme.secondary;
-    this.context.lineWidth = Math.max(2, 1.2 / Math.max(this.scale, .01));
-    for (const markX of [-110, -72, -34]) {
-      this.context.beginPath();
-      this.context.moveTo(markX - 9, -10);
-      this.context.lineTo(markX + 3, 0);
-      this.context.lineTo(markX - 9, 10);
-      this.context.stroke();
-    }
-    this.context.restore();
   }
 
   private drawBreachSeal(): void {
@@ -3030,12 +3071,129 @@ export class CanvasRenderer {
     return [...this.displayedTowerFacingsU16] as TowerAimAnglesU16;
   }
 
-  private drawTowers(anglesU16: TowerAimAnglesU16, selectedTowerId: TowerId): void {
+  private drawTowerPlacementGuide(placement: TowerPlacementRenderState): void {
+    const zones = createDefaultTowerBuildZones();
+    this.context.save();
+    for (const zone of zones) {
+      const first = zone.points[0];
+      if (!first) continue;
+      this.context.beginPath();
+      this.context.moveTo(first.x, first.y);
+      for (const point of zone.points.slice(1)) this.context.lineTo(point.x, point.y);
+      this.context.closePath();
+      this.context.fillStyle = 'rgba(78, 221, 178, .065)';
+      this.context.fill();
+      this.context.save();
+      this.context.clip();
+      this.context.strokeStyle = 'rgba(121, 239, 205, .13)';
+      this.context.lineWidth = 1;
+      for (let x = 0; x <= DESIGN_WIDTH; x += TOWER_PLACEMENT_GRID_PX) {
+        this.context.beginPath();
+        this.context.moveTo(x, 0);
+        this.context.lineTo(x, 1_200);
+        this.context.stroke();
+      }
+      for (let y = 0; y <= 1_200; y += TOWER_PLACEMENT_GRID_PX) {
+        this.context.beginPath();
+        this.context.moveTo(0, y);
+        this.context.lineTo(DESIGN_WIDTH, y);
+        this.context.stroke();
+      }
+      this.context.restore();
+      this.context.beginPath();
+      this.context.moveTo(first.x, first.y);
+      for (const point of zone.points.slice(1)) this.context.lineTo(point.x, point.y);
+      this.context.closePath();
+      this.context.strokeStyle = 'rgba(116, 238, 202, .48)';
+      this.context.lineWidth = 3;
+      this.context.setLineDash?.([18, 12]);
+      this.context.stroke();
+      this.context.setLineDash?.([]);
+    }
+
+    for (const towerId of this.activeTowerIds) {
+      if (placement.kind === 'move' && towerId === placement.towerId) continue;
+      const point = this.towerPositions[towerId];
+      if (!point) continue;
+      this.context.fillStyle = 'rgba(220, 72, 78, .075)';
+      this.context.strokeStyle = 'rgba(255, 129, 116, .32)';
+      this.context.lineWidth = 2;
+      this.context.beginPath();
+      this.context.arc(point.x, point.y, TOWER_SPACING_PX, 0, Math.PI * 2);
+      this.context.fill();
+      this.context.stroke();
+    }
+
+    this.context.fillStyle = 'rgba(220, 72, 78, .10)';
+    this.context.strokeStyle = 'rgba(255, 129, 116, .46)';
+    this.context.lineWidth = 3;
+    this.context.beginPath();
+    this.context.arc(
+      this.bundle.route.breachPoint.x,
+      this.bundle.route.breachPoint.y,
+      TOWER_BREACH_CLEARANCE_PX,
+      0,
+      Math.PI * 2,
+    );
+    this.context.fill();
+    this.context.stroke();
+    this.context.restore();
+  }
+
+  private drawTowerPlacementGhost(placement: TowerPlacementRenderState): void {
+    const point = placement.point;
+    if (!point) return;
+    const valid = placement.valid === true;
+    const color = valid ? '#6cf0b0' : '#ff8174';
+    const visual = TOWER_VISUALS[placement.towerId];
+    const facing = this.displayedTowerFacingsU16[placement.towerId] ?? 0;
+    this.context.save();
+    this.context.translate(point.x, point.y);
+    this.context.globalAlpha = .72;
+    this.drawTowerBase(placement.towerId);
+    this.context.save();
+    this.context.translate(0, visual.mountY);
+    this.context.rotate(u16ToRadians(facing));
+    this.drawTowerHead(placement.towerId);
+    this.context.restore();
+    this.context.globalAlpha = 1;
+    this.context.fillStyle = valid ? 'rgba(74, 235, 164, .10)' : 'rgba(255, 92, 82, .12)';
+    this.context.strokeStyle = color;
+    this.context.lineWidth = 7;
+    this.context.beginPath();
+    this.context.arc(0, -8, 112, 0, Math.PI * 2);
+    this.context.fill();
+    this.context.stroke();
+    this.drawTowerBadge(placement.towerId, valid);
+    const label = valid
+      ? placement.kind === 'build' ? '松手确认部署' : '松手确认移阵'
+      : placement.reason ? TOWER_PLACEMENT_REASON_LABEL[placement.reason] : '落点已失效';
+    this.pill(
+      -116,
+      92,
+      232,
+      36,
+      label,
+      valid ? 'rgba(10, 72, 55, .92)' : 'rgba(91, 25, 31, .94)',
+      color,
+      16,
+      10,
+    );
+    this.context.restore();
+  }
+
+  private drawTowers(
+    anglesU16: TowerAimAnglesU16,
+    selectedTowerId: TowerId,
+    placement?: TowerPlacementRenderState,
+  ): void {
     const now = Date.now();
-    this.bundle.route.towerAnchors.forEach((anchor, index) => {
-      const towerId = index as TowerId;
+    for (const towerId of TOWER_IDS) {
+      if (!this.activeTowerIds.has(towerId)) continue;
+      if (placement?.kind === 'move' && placement.towerId === towerId && placement.point) continue;
+      const anchor = this.towerPositions[towerId];
+      if (!anchor) continue;
       const visual = TOWER_VISUALS[towerId];
-      const active = this.activeTowerIds.has(towerId);
       const selected = towerId === selectedTowerId;
       const recoilElapsed = now - (this.towerRecoilStartedAt[towerId] ?? 0);
       const recoilActive = recoilElapsed >= 0 && recoilElapsed < 150;
@@ -3045,11 +3203,6 @@ export class CanvasRenderer {
       const angle = u16ToRadians(facingU16);
       this.context.save();
       this.context.translate(anchor.x, anchor.y);
-      if (!active) {
-        this.drawLockedTowerBase(towerId);
-        this.context.restore();
-        return;
-      }
       this.drawTowerSelection(selected, now);
       this.drawTowerBase(towerId);
       this.context.save();
@@ -3063,30 +3216,7 @@ export class CanvasRenderer {
       this.context.restore();
       this.drawTowerBadge(towerId, selected);
       this.context.restore();
-    });
-  }
-
-  private drawLockedTowerBase(towerId: TowerId): void {
-    this.context.save();
-    this.context.globalAlpha = .3;
-    this.drawTowerBase(towerId);
-    this.context.restore();
-    this.context.save();
-    this.context.shadowColor = 'rgba(4, 12, 26, .9)';
-    this.context.shadowBlur = 16;
-    this.drawSeal(0, -18, 36, '锁', 'rgba(4, 16, 31, .94)', '#8fa5ad');
-    this.context.restore();
-    this.pill(
-      -58,
-      72,
-      116,
-      30,
-      '待增援',
-      'rgba(3, 14, 29, .86)',
-      'rgba(200, 216, 216, .68)',
-      15,
-      9,
-    );
+    }
   }
 
   private drawTowerSelection(selected: boolean, now: number): void {
@@ -3131,30 +3261,7 @@ export class CanvasRenderer {
       );
       return;
     }
-
-    this.context.fillStyle = '#102c48';
-    this.context.strokeStyle = visual.accent;
-    this.context.lineWidth = 8;
-    this.context.beginPath();
-    for (let point = 0; point < 8; point += 1) {
-      const angle = Math.PI / 8 + point * Math.PI / 4;
-      const x = Math.cos(angle) * 88;
-      const y = Math.sin(angle) * 72;
-      if (point === 0) this.context.moveTo(x, y);
-      else this.context.lineTo(x, y);
-    }
-    this.context.closePath();
-    this.context.fill();
-    this.context.stroke();
-    this.context.fillStyle = visual.aura;
-    this.context.beginPath();
-    this.context.arc(0, -25, 48, 0, Math.PI * 2);
-    this.context.fill();
-    this.context.strokeStyle = 'rgba(239,220,165,.78)';
-    this.context.lineWidth = 5;
-    this.context.beginPath();
-    this.context.arc(0, -25, 34, 0, Math.PI * 2);
-    this.context.stroke();
+    this.drawMissingAssetMarker(visual.baseAssetId, 176, 144);
   }
 
   private drawTowerHead(towerId: TowerId): void {
@@ -3170,92 +3277,20 @@ export class CanvasRenderer {
         visual.headSize,
       );
     } else {
-      this.context.fillStyle = '#10263f';
-      this.context.strokeStyle = visual.accent;
-      this.context.lineWidth = 7;
-      this.context.beginPath();
-      this.context.arc(0, 0, 31, 0, Math.PI * 2);
-      this.context.fill();
-      this.context.stroke();
-      this.context.strokeStyle = '#e4c36f';
-      this.context.lineWidth = 10;
-      this.context.beginPath();
-      this.context.moveTo(-19, -49);
-      this.context.quadraticCurveTo(-53, 0, -19, 49);
-      this.context.stroke();
-      this.context.strokeStyle = 'rgba(235,248,240,.86)';
-      this.context.lineWidth = 3;
-      this.context.beginPath();
-      this.context.moveTo(-19, -49);
-      this.context.lineTo(-34, 0);
-      this.context.lineTo(-19, 49);
-      this.context.stroke();
+      this.drawMissingAssetMarker(visual.headAssetId, 110, 96);
     }
     this.drawLoadedTowerArrow(towerId, visual.arrowLength);
   }
 
-  private drawLoadedTowerArrow(towerId: TowerId, arrowLength: number): void {
-    const palette = PROJECTILE_PALETTES[towerId];
+  private drawLoadedTowerArrow(_towerId: TowerId, arrowLength: number): void {
     const tail = -18;
     const tip = arrowLength;
-    this.context.lineCap = 'round';
-    this.context.strokeStyle = '#061426';
-    this.context.lineWidth = 8;
-    this.context.beginPath();
-    this.context.moveTo(tail, 0);
-    this.context.lineTo(tip - 7, 0);
-    this.context.stroke();
-    this.context.strokeStyle = '#f4edd7';
-    this.context.lineWidth = 3;
-    this.context.beginPath();
-    this.context.moveTo(tail, 0);
-    this.context.lineTo(tip - 7, 0);
-    this.context.stroke();
-
-    this.context.fillStyle = '#07162a';
-    this.context.beginPath();
-    this.context.moveTo(tail - 5, 0);
-    this.context.lineTo(tail + 10, -11);
-    this.context.lineTo(tail + 16, -4);
-    this.context.lineTo(tail + 8, 0);
-    this.context.lineTo(tail + 16, 4);
-    this.context.lineTo(tail + 10, 11);
-    this.context.closePath();
-    this.context.fill();
-    this.context.fillStyle = palette.feather;
-    this.context.beginPath();
-    this.context.moveTo(tail - 1, 0);
-    this.context.lineTo(tail + 10, -7);
-    this.context.lineTo(tail + 14, -3);
-    this.context.lineTo(tail + 7, 0);
-    this.context.lineTo(tail + 14, 3);
-    this.context.lineTo(tail + 10, 7);
-    this.context.closePath();
-    this.context.fill();
-
-    this.context.fillStyle = '#061426';
-    this.context.beginPath();
-    this.context.moveTo(tip - 12, -12);
-    this.context.lineTo(tip + 10, 0);
-    this.context.lineTo(tip - 12, 12);
-    this.context.lineTo(tip - 5, 0);
-    this.context.closePath();
-    this.context.fill();
-    this.context.fillStyle = palette.feather;
-    this.context.beginPath();
-    this.context.moveTo(tip - 9, -8);
-    this.context.lineTo(tip + 7, 0);
-    this.context.lineTo(tip - 9, 8);
-    this.context.lineTo(tip - 3, 0);
-    this.context.closePath();
-    this.context.fill();
-    this.context.fillStyle = '#ffe29b';
-    this.context.beginPath();
-    this.context.moveTo(tip - 3, -4);
-    this.context.lineTo(tip + 7, 0);
-    this.context.lineTo(tip - 3, 4);
-    this.context.closePath();
-    this.context.fill();
+    const arrow = this.images.get('projectile:basic-arrow');
+    if (arrow) {
+      this.context.drawImage(arrow, tail - 6, -14, tip - tail + 18, 28);
+      return;
+    }
+    this.drawMissingAssetMarker('projectile:basic-arrow', tip - tail + 18, 28);
   }
 
   private drawTowerBadge(towerId: TowerId, selected: boolean): void {
@@ -3275,15 +3310,21 @@ export class CanvasRenderer {
     selectedTowerId: TowerId,
     aimingTowerId?: TowerId,
     point?: DesignPoint,
+    placement?: TowerPlacementRenderState,
   ): void {
     const halfAngle = u16ToRadians(this.bundle.tower.aimHalfAngleU16);
-    this.bundle.route.towerAnchors.forEach((anchor, index) => {
-      const towerId = index as TowerId;
-      if (!this.activeTowerIds.has(towerId)) return;
+    for (const towerId of TOWER_IDS) {
+      if (!this.activeTowerIds.has(towerId)) continue;
+      const anchor = placement?.kind === 'move' &&
+        placement.towerId === towerId &&
+        placement.point
+        ? placement.point
+        : this.towerPositions[towerId];
+      if (!anchor) continue;
       const angle = u16ToRadians(anglesU16[towerId]);
       const selected = towerId === selectedTowerId;
       const aiming = towerId === aimingTowerId;
-      if (!selected && !aiming) return;
+      if (!selected && !aiming) continue;
       const guideRadius = aiming ? 300 : 230;
       this.context.beginPath();
       this.context.moveTo(anchor.x, anchor.y);
@@ -3304,9 +3345,10 @@ export class CanvasRenderer {
         anchor.y + Math.sin(angle) * (guideRadius - 18),
       );
       this.context.stroke();
-    });
+    }
     if (aimingTowerId === undefined || !point || !this.activeTowerIds.has(aimingTowerId)) return;
-    const anchor = this.bundle.route.towerAnchors[aimingTowerId];
+    const anchor = this.towerPositions[aimingTowerId];
+    if (!anchor) return;
     this.context.strokeStyle = 'rgba(85, 227, 231, .52)';
     this.context.lineWidth = 3;
     this.context.beginPath();
@@ -3350,7 +3392,11 @@ export class CanvasRenderer {
   }
 
   private drawEnemy(entity: RenderEntityV1, now: number, suppressHealthBar = false): void {
-    const visual = ENEMY_VISUALS[entity.assetId] ?? ENEMY_VISUALS.MON_TIDE_IMP;
+    const visual = ENEMY_VISUALS[entity.assetId];
+    if (!visual) {
+      this.drawMissingAssetMarker(entity.assetId, 132, 96);
+      return;
+    }
     const isCrab = entity.assetId === 'MON_SHELL_CRAB';
     const isBoss = visual.role === 'boss';
     const isArmored = visual.role === 'armored' || isBoss;
@@ -3510,13 +3556,7 @@ export class CanvasRenderer {
         height,
       );
     } else {
-      this.context.fillStyle = isBoss ? '#253f70' : isArmored ? '#d25b4f' : isEel ? '#42cfc8' : '#3ab4cf';
-      this.context.strokeStyle = '#0b2238';
-      this.context.lineWidth = 6;
-      this.context.beginPath();
-      this.context.ellipse(0, 0, bodyWidth * .42, bodyHeight * .38, 0, 0, Math.PI * 2);
-      this.context.fill();
-      this.context.stroke();
+      this.drawMissingAssetMarker(entity.assetId, bodyWidth * .84, bodyHeight * .76);
     }
     this.context.restore();
 
@@ -3600,6 +3640,31 @@ export class CanvasRenderer {
     }
   }
 
+  private drawMissingAssetMarker(assetId: string, width: number, height: number): void {
+    this.context.fillStyle = '#ff2baa';
+    this.context.strokeStyle = '#ffffff';
+    this.context.lineWidth = 4;
+    this.context.fillRect(-width / 2, -height / 2, width, height);
+    this.context.strokeRect(-width / 2, -height / 2, width, height);
+    this.context.beginPath();
+    this.context.moveTo(-width / 2 + 8, -height / 2 + 8);
+    this.context.lineTo(width / 2 - 8, height / 2 - 8);
+    this.context.moveTo(width / 2 - 8, -height / 2 + 8);
+    this.context.lineTo(-width / 2 + 8, height / 2 - 8);
+    this.context.stroke();
+    this.fitText(
+      `缺图 ${assetId}`,
+      0,
+      5,
+      Math.max(24, width - 16),
+      14,
+      '#111111',
+      'center',
+      850,
+      8,
+    );
+  }
+
   private drawDeathGhosts(): void {
     const now = Date.now();
     this.deathGhosts = this.deathGhosts.filter((ghost) => {
@@ -3668,101 +3733,42 @@ export class CanvasRenderer {
       this.context.restore();
     }
 
-    this.context.globalAlpha = shimmer;
-    this.context.fillStyle = critical
-      ? 'rgba(255,164,63,.24)'
-      : focused
-        ? 'rgba(255,224,125,.32)'
-        : palette.trail;
-    this.context.beginPath();
-    this.context.moveTo(-72, 0);
-    this.context.lineTo(-18, -8);
-    this.context.lineTo(-8, 0);
-    this.context.lineTo(-18, 8);
-    this.context.closePath();
-    this.context.fill();
-    this.context.fillStyle = critical ? 'rgba(255,232,147,.50)' : 'rgba(171,245,235,.42)';
-    this.context.beginPath();
-    this.context.moveTo(-56, 0);
-    this.context.lineTo(-14, -3);
-    this.context.lineTo(-5, 0);
-    this.context.lineTo(-14, 3);
-    this.context.closePath();
-    this.context.fill();
-    this.context.globalAlpha = 1;
-
     if (penetrating) {
+      this.context.save();
+      this.context.globalAlpha = .56;
       this.context.strokeStyle = 'rgba(82,235,229,.56)';
       this.context.lineCap = 'round';
       this.context.lineWidth = 13;
       this.context.beginPath();
-      this.context.moveTo(-25, 0);
-      this.context.lineTo(31, 0);
+      this.context.moveTo(-38, 0);
+      this.context.lineTo(43, 0);
       this.context.stroke();
+      this.context.restore();
     }
-    this.context.strokeStyle = '#07162a';
-    this.context.lineCap = 'round';
-    this.context.lineWidth = 9;
-    this.context.beginPath();
-    this.context.moveTo(-28, 0);
-    this.context.lineTo(31, 0);
-    this.context.stroke();
-    this.context.strokeStyle = critical ? '#fff1bd' : '#f3ead2';
-    this.context.lineWidth = 4;
-    this.context.beginPath();
-    this.context.moveTo(-28, 0);
-    this.context.lineTo(31, 0);
-    this.context.stroke();
 
-    this.context.fillStyle = '#07162a';
-    this.context.beginPath();
-    this.context.moveTo(-34, 0);
-    this.context.lineTo(-16, -13);
-    this.context.lineTo(-11, -4);
-    this.context.lineTo(-20, 0);
-    this.context.lineTo(-11, 4);
-    this.context.lineTo(-16, 13);
-    this.context.closePath();
-    this.context.fill();
-    this.context.fillStyle = palette.feather;
-    this.context.beginPath();
-    this.context.moveTo(-31, 0);
-    this.context.lineTo(-17, -9);
-    this.context.lineTo(-13, -3);
-    this.context.lineTo(-21, 0);
-    this.context.lineTo(-13, 3);
-    this.context.lineTo(-17, 9);
-    this.context.closePath();
-    this.context.fill();
-
-    this.context.fillStyle = '#09172a';
-    this.context.beginPath();
-    this.context.moveTo(25, -13);
-    this.context.lineTo(50, 0);
-    this.context.lineTo(25, 13);
-    this.context.lineTo(31, 0);
-    this.context.closePath();
-    this.context.fill();
-    this.context.fillStyle = critical ? '#ffad45' : '#e5aa43';
-    this.context.beginPath();
-    this.context.moveTo(28, -9);
-    this.context.lineTo(47, 0);
-    this.context.lineTo(31, 0);
-    this.context.closePath();
-    this.context.fill();
-    this.context.fillStyle = critical ? '#fff0a8' : '#ffd77b';
-    this.context.beginPath();
-    this.context.moveTo(31, 0);
-    this.context.lineTo(47, 0);
-    this.context.lineTo(28, 9);
-    this.context.closePath();
-    this.context.fill();
+    const arrow = this.images.get(entity.assetId);
+    if (!arrow) {
+      this.drawMissingAssetMarker(entity.assetId, 96, 28);
+      return;
+    }
+    this.context.save();
+    this.context.globalAlpha = shimmer;
+    if (critical) {
+      this.context.shadowBlur = 12;
+      this.context.shadowColor = '#ffad45';
+    } else if (focused) {
+      this.context.shadowBlur = 10;
+      this.context.shadowColor = palette.feather;
+    }
+    this.context.drawImage(arrow, -48, -12, 96, 24);
+    this.context.restore();
   }
 
-  private drawEffects(): void {
-    const now = Date.now();
+  private drawEffects(layer: VisualEffectLayer, now = Date.now()): void {
     this.effects = this.effects.filter((effect) => now - effect.startedAt < effect.duration);
     for (const effect of this.effects) {
+      const isGroundEffect = effect.kind === 'sprite' && effect.assetId === 'VFX_SPAWN_PORTAL';
+      if ((layer === 'ground') !== isGroundEffect) continue;
       const age = now - effect.startedAt;
       if (age < 0) continue;
       const progress = Math.max(0, Math.min(1, age / effect.duration));
@@ -3793,6 +3799,8 @@ export class CanvasRenderer {
           const frame = Math.max(0, Math.min(frameCount - 1, Math.floor(progress * frameCount)));
           const sourceWidth = 128;
           const size = effect.size ?? 96;
+          const destinationHeight = isGroundEffect ? size * .4 : size;
+          const destinationOffsetY = isGroundEffect ? size * .22 : 0;
           this.context.save();
           this.context.globalAlpha = Math.min(1, (1 - progress) * 2.6);
           this.context.translate(effect.x, effect.y);
@@ -3804,13 +3812,18 @@ export class CanvasRenderer {
             sourceWidth,
             128,
             -size / 2,
-            -size / 2,
+            -destinationHeight / 2 + destinationOffsetY,
             size,
-            size,
+            destinationHeight,
           );
           this.context.restore();
           continue;
         }
+        this.context.save();
+        this.context.translate(effect.x, effect.y);
+        this.drawMissingAssetMarker(effect.assetId, 96, 72);
+        this.context.restore();
+        continue;
       }
       const radius = effect.kind === 'revive' ? 42 + progress * 120 : 18 + progress * 58;
       this.context.save();
@@ -3886,26 +3899,21 @@ export class CanvasRenderer {
     );
     for (const item of this.floatingDamageTexts) {
       const progress = Math.max(0, Math.min(1, (now - item.startedAt) / item.duration));
-      const rise = 20 + progress * (item.critical ? 86 : 68);
-      const jitter = ((item.entityId * 17 + item.towerId * 23) % 7 - 3) * 7;
-      const mitigationLabel = item.mitigation === 'phase-shell'
-        ? '壳'
-        : item.mitigation === 'ethereal'
-          ? '虚'
-          : item.mitigation === 'guard-aura'
-            ? '阵'
-            : item.mitigation === 'armor'
-              ? '甲'
-              : '';
-      const hitLabels = [item.critical ? '暴' : '', item.penetrating ? '穿' : '', mitigationLabel]
-        .filter(Boolean)
-        .join('·');
-      const prefix = hitLabels ? `${hitLabels} ` : '';
+      const entity = this.entityRenderCache.get(item.entityId);
+      const visual = entity ? ENEMY_VISUALS[entity.assetId] ?? ENEMY_VISUALS.MON_TIDE_IMP : undefined;
+      const bodyWidth = visual?.width ?? 120;
+      const bodyHeight = visual?.height ?? 100;
+      const side = item.entityId % 2 === 0 ? 1 : -1;
+      const horizontalOffset = side * Math.min(74, bodyWidth * .34);
+      const laneOffset = ((item.entityId + item.towerId) % 3 - 1) * 10;
+      const rise = progress * (item.critical ? 64 : 52);
       const suffix = item.hitCount > 1 ? ` ×${item.hitCount}` : '';
-      const label = `${prefix}${item.damageMilli > 0 ? '-' : ''}${preciseDamage(item.damageMilli)}${suffix}`;
-      const size = this.resolveFontSize(item.critical ? 32 : item.penetrating ? 23 : 27, 9);
+      const label = `${item.critical ? '暴 ' : ''}${item.damageMilli > 0 ? '-' : ''}${compactDamage(item.damageMilli)}${suffix}`;
+      const size = this.resolveFontSize(item.critical ? 29 : 24, 9);
       const fadeIn = Math.min(1, progress * 7);
       const fadeOut = Math.min(1, (1 - progress) * 3.2);
+      const x = item.x + horizontalOffset + laneOffset;
+      const y = item.y + bodyHeight * .16 - rise;
       this.context.save();
       this.context.globalAlpha = fadeIn * fadeOut;
       this.context.font = `bold ${size}px ${CARD_NUMBER_FONT}`;
@@ -3916,11 +3924,9 @@ export class CanvasRenderer {
       this.context.strokeStyle = 'rgba(1, 8, 18, .92)';
       this.context.fillStyle = item.critical
         ? '#ffd36d'
-        : item.penetrating
-          ? PROJECTILE_PALETTES[item.towerId]?.feather ?? '#72ead5'
-          : '#edf8ef';
-      this.context.strokeText(label, item.x + jitter, item.y - rise);
-      this.context.fillText(label, item.x + jitter, item.y - rise);
+        : PROJECTILE_PALETTES[item.towerId]?.feather ?? '#edf8ef';
+      this.context.strokeText(label, x, y);
+      this.context.fillText(label, x, y);
       this.context.restore();
     }
   }
@@ -3949,6 +3955,126 @@ export class CanvasRenderer {
       this.context.strokeText(callout.text, 0, 0);
       this.context.fillText(callout.text, 0, 0);
       this.context.restore();
+    }
+  }
+
+  private drawTowerPreparationControls(
+    hud: HudProjectionV1,
+    placement?: TowerPlacementRenderState,
+  ): void {
+    const build = hud.towerBuild;
+    const buildX = TOWER_PREPARATION_CONTROL_X;
+    const buildY = TOWER_PREPARATION_CONTROL_Y;
+    const buildWidth = TOWER_PREPARATION_CONTROL_WIDTH;
+    const nextTowerLabel = build.nextTowerId === null ? '' : `${build.nextTowerId + 1} 号塔`;
+    const warPointShortfall = Math.max(0, build.cost - hud.warPointsBalance);
+    const secondsRemaining = Math.max(0, hud.preparationTicksRemaining) / TICKS_PER_SECOND;
+    const buildStatus = placement?.kind === 'build'
+      ? '选择绿色落点，松手部署'
+      : placement?.kind === 'move'
+        ? `移动 ${placement.towerId + 1} 号塔，松手确认`
+        : build.nextTowerId === null
+          ? '长按任意箭塔可重新布阵'
+          : !build.unlocked
+            ? `第 ${build.requiredCompletedWaves} 波后解锁 ${nextTowerLabel}`
+            : !build.affordable
+              ? `${nextTowerLabel}还差 ${warPointShortfall} 战功`
+              : `${nextTowerLabel}已可部署`;
+    const preparationStatus = placement
+      ? '自动开波已暂停'
+      : `${secondsRemaining.toFixed(1)} 秒后自动开波`;
+
+    this.context.fillStyle = 'rgba(4, 17, 34, .94)';
+    this.context.strokeStyle = placement ? '#6cf0b0' : 'rgba(116, 223, 205, .54)';
+    this.context.lineWidth = placement ? 3 : 2;
+    this.roundRect(
+      buildX,
+      buildY,
+      buildWidth,
+      TOWER_PREPARATION_CONTROL_HEIGHT,
+      22,
+    );
+    this.context.fill();
+    this.context.stroke();
+    this.fitText(
+      `自由布阵 · ${preparationStatus}`,
+      buildX + 20,
+      buildY + 30,
+      244,
+      16,
+      '#78e5c5',
+      'left',
+      760,
+      9,
+      CARD_BODY_FONT,
+    );
+    this.fitText(
+      buildStatus,
+      buildX + 20,
+      buildY + 61,
+      244,
+      16,
+      build.canBuild || placement ? '#f3ead2' : 'rgba(225,237,232,.68)',
+      'left',
+      700,
+      9,
+      CARD_BODY_FONT,
+    );
+
+    const actionWidth = 188;
+    const actionX = buildX + buildWidth - actionWidth - 14;
+    const actionY = buildY + 14;
+    const actionHeight = 58;
+    if (placement) {
+      this.drawButton(
+        'tower-build-cancel',
+        actionX,
+        actionY,
+        actionWidth,
+        actionHeight,
+        placement.kind === 'build' ? '取消部署' : '取消移阵',
+        'rgba(116, 50, 54, .54)',
+        '#ffd4cb',
+        'rgba(255, 129, 116, .66)',
+        18,
+        10,
+      );
+    } else if (build.canBuild && build.nextTowerId !== null) {
+      this.drawButton(
+        'tower-build',
+        actionX,
+        actionY,
+        actionWidth,
+        actionHeight,
+        `部署 ${nextTowerLabel} · ${build.cost}功`,
+        '#2e9c78',
+        '#effff5',
+        '#78e5c5',
+        18,
+        10,
+      );
+    } else {
+      const disabledLabel = build.nextTowerId === null
+        ? '已全部部署'
+        : !build.unlocked
+          ? `第 ${build.requiredCompletedWaves} 波后开放`
+          : `还差 ${warPointShortfall} 战功`;
+      this.context.fillStyle = 'rgba(255,255,255,.045)';
+      this.context.strokeStyle = 'rgba(176,203,196,.20)';
+      this.context.lineWidth = 2;
+      this.roundRect(actionX, actionY, actionWidth, actionHeight, 18);
+      this.context.fill();
+      this.context.stroke();
+      this.text(
+        disabledLabel,
+        actionX + actionWidth / 2,
+        actionY + 36,
+        17,
+        'rgba(220,235,231,.46)',
+        'center',
+        680,
+        9,
+      );
     }
   }
 
@@ -4049,18 +4175,52 @@ export class CanvasRenderer {
     }
 
     const controlsRight = this.resolveHudControlsRight();
-    this.drawButton('hud-speed', controlsRight - 302, 28, 92, 78, `${hud.speed}×`, 'rgba(6,20,40,.9)', '#f2e8cd', '#5b7384');
-    this.drawButton(
-      'hud-pause',
-      controlsRight - 197,
+    this.drawImageButton(
+      'hud-speed',
+      controlsRight - 302,
       28,
       92,
       78,
-      hud.flowState === 'paused' ? '▶' : 'Ⅱ',
+      hud.speed === 2 ? 'ICON_SPEED_2X' : 'ICON_SPEED_1X',
+      `${hud.speed}×`,
       'rgba(6,20,40,.9)',
       '#f2e8cd',
       '#5b7384',
     );
+    if (hud.flowState === 'preparing') {
+      const preparationSeconds = Math.max(0, hud.preparationTicksRemaining) / TICKS_PER_SECOND;
+      this.context.fillStyle = 'rgba(6,20,40,.72)';
+      this.context.strokeStyle = 'rgba(91,115,132,.34)';
+      this.context.lineWidth = 2;
+      this.roundRect(controlsRight - 197, 28, 92, 78, 16);
+      this.context.fill();
+      this.context.stroke();
+      this.text('自动开波', controlsRight - 151, 57, 13, 'rgba(242,232,205,.58)', 'center', 650, 8);
+      this.text(
+        `${preparationSeconds.toFixed(1)}s`,
+        controlsRight - 151,
+        84,
+        20,
+        '#f2d68e',
+        'center',
+        760,
+        10,
+        CARD_NUMBER_FONT,
+      );
+    } else {
+      this.drawImageButton(
+        'hud-pause',
+        controlsRight - 197,
+        28,
+        92,
+        78,
+        hud.flowState === 'paused' ? 'ICON_PLAY' : 'ICON_PAUSE',
+        hud.flowState === 'paused' ? '▶' : 'Ⅱ',
+        'rgba(6,20,40,.9)',
+        '#f2e8cd',
+        '#5b7384',
+      );
+    }
     this.drawButton('hud-mute', controlsRight - 92, 28, 92, 78, muted ? '音效关' : '音效', 'rgba(6,20,40,.9)', '#f2e8cd', '#5b7384');
 
     const showOverdrive = hud.mode === 'fixed' && hud.overdrive.durationTicks > 0;
@@ -4119,7 +4279,7 @@ export class CanvasRenderer {
       const shopStatus = hud.shopAvailable
         ? hud.shopPurchasesThisWave > 0
           ? `本波 ${hud.shopPurchasesThisWave}/${hud.shopPurchaseLimitPerWave} · 继续兑换  ›`
-          : '兑换法门 / 增援  ›'
+          : '兑换法门  ›'
         : hud.shopPurchasedThisWave
           ? `本波已兑 ${hud.shopPurchaseLimitPerWave} 次 · 下波刷新`
           : '击杀积攒 · 商店筹备中';
@@ -4160,7 +4320,10 @@ export class CanvasRenderer {
       );
       if (
         hud.shopAvailable &&
-        (hud.flowState === 'running' || hud.flowState === 'paused' || hud.flowState === 'performance-paused')
+        (hud.flowState === 'preparing' ||
+          hud.flowState === 'running' ||
+          hud.flowState === 'paused' ||
+          hud.flowState === 'performance-paused')
       ) {
         this.interactions.push({
           id: 'hud-shop',
@@ -4170,6 +4333,7 @@ export class CanvasRenderer {
           height: 122,
         });
       }
+      this.drawShopShortcuts(hud);
     } else {
       this.drawSeal(104, 978, 43, String(hud.level));
       this.text('境界', 164, 962, 17, theme.accent, 'left', 600);
@@ -4230,18 +4394,266 @@ export class CanvasRenderer {
     this.context.stroke();
     const recentDpsMilli = towerMetrics.reduce((sum, metric) => sum + metric.damageLast1sMilli, 0);
     this.text(`${this.activeTowerIds.size} 塔战策 · 已选 ${selectedTowerId + 1} 号`, damageX + 20, 945, 15, theme.accent, 'left', 700, 8);
-    this.text('详情  ›', damageX + damageWidth - 18, 945, 15, theme.accent, 'right', 700, 8);
+    const strategyAvailable = hud.flowState !== 'preparing';
+    this.text(
+      strategyAvailable ? '详情  ›' : '迎敌后可查看',
+      damageX + damageWidth - 18,
+      945,
+      15,
+      strategyAvailable ? theme.accent : 'rgba(220,235,231,.38)',
+      'right',
+      700,
+      8,
+    );
     this.text('累计伤害', damageX + 20, 977, 13, 'rgba(230,240,237,.52)', 'left', 550, 8);
     this.text(compactDamage(hud.damageDealtMilli), damageX + 20, 1011, 26, theme.secondary, 'left', 760, 10, CARD_NUMBER_FONT);
     this.text('近 1 秒 DPS', damageX + damageWidth - 20, 977, 13, 'rgba(230,240,237,.52)', 'right', 550, 8);
     this.text(compactDamage(recentDpsMilli), damageX + damageWidth - 20, 1011, 26, '#72ead5', 'right', 760, 10, CARD_NUMBER_FONT);
-    this.interactions.push({
-      id: 'hud-strategy',
-      x: damageX,
-      y: BATTLE_BOTTOM_HUD_TOP,
-      width: damageWidth,
-      height: 122,
-    });
+    if (strategyAvailable) {
+      this.interactions.push({
+        id: 'hud-strategy',
+        x: damageX,
+        y: BATTLE_BOTTOM_HUD_TOP,
+        width: damageWidth,
+        height: 122,
+      });
+    }
+  }
+
+  private drawShopShortcuts(hud: HudProjectionV1): void {
+    const offer = hud.shopOffer;
+    const previews = hud.shopOfferPreviews ?? [];
+    const full = hud.shopPurchasedThisWave;
+    const compact = resolveShopShortcutLayout(this.scale, 0).compact;
+    const flashAge = Date.now() - this.shopReadyFlashStartedAt;
+    const flashActive = flashAge >= 0 && flashAge < 1_200;
+    const flashStrength = flashActive
+      ? (1 - flashAge / 1_200) * (.78 + Math.sin(flashAge / 70) * .18)
+      : 0;
+    const readyCount = offer?.cards.reduce((count, cardId) => {
+      const card = this.cardsById.get(cardId);
+      const preview = previews.find((candidate) => candidate.cardId === cardId);
+      if (!card || !preview) return count;
+      const atCap = preview.capped && cardPreviewIsUnchanged(card, preview);
+      return count + (!atCap && preview.warPointCost !== undefined &&
+        preview.warPointCost <= hud.warPointsBalance && hud.shopAvailable ? 1 : 0);
+    }, 0) ?? 0;
+
+    this.text(
+      compact ? '战功兑换' : '战功快捷兑换',
+      42,
+      588,
+      15,
+      'rgba(226,239,233,.74)',
+      'left',
+      700,
+      compact ? 10 : 9,
+    );
+    const railStatus = full
+      ? compact
+        ? `已满 ${hud.shopPurchaseLimitPerWave}/${hud.shopPurchaseLimitPerWave}`
+        : `本波已满 ${hud.shopPurchaseLimitPerWave}/${hud.shopPurchaseLimitPerWave}`
+      : flashActive
+        ? compact
+          ? `新解锁 ${this.shopReadyFlashNewCount}`
+          : `新解锁 ${this.shopReadyFlashNewCount} 项 · 共 ${this.shopReadyFlashTotalCount} 项可兑换`
+        : readyCount > 0
+          ? compact
+            ? `可换 ${readyCount} · ${hud.shopPurchasesThisWave}/${hud.shopPurchaseLimitPerWave}`
+            : `${readyCount} 项可兑换 · 本波 ${hud.shopPurchasesThisWave}/${hud.shopPurchaseLimitPerWave}`
+          : compact
+            ? `${hud.shopPurchasesThisWave}/${hud.shopPurchaseLimitPerWave}`
+            : `本波 ${hud.shopPurchasesThisWave}/${hud.shopPurchaseLimitPerWave}`;
+    this.fitText(
+      railStatus,
+      compact ? 372 : 360,
+      588,
+      compact ? 140 : 194,
+      13,
+      flashActive || readyCount > 0 ? '#ffd36d' : 'rgba(204,220,216,.56)',
+      'right',
+      650,
+      compact ? 9 : 8,
+      CARD_BODY_FONT,
+    );
+
+    for (let index = 0; index < 3; index += 1) {
+      const layout = resolveShopShortcutLayout(this.scale, index);
+      const { x, y, width, height } = layout;
+      const cardId = offer?.cards[index];
+      const card = cardId ? this.cardsById.get(cardId) : undefined;
+      const preview = cardId
+        ? previews.find((candidate) => candidate.cardId === cardId)
+        : undefined;
+      const atCap = Boolean(card && preview?.capped && cardPreviewIsUnchanged(card, preview));
+      const affordable = Boolean(
+        card &&
+        preview &&
+        !atCap &&
+        hud.shopAvailable &&
+        preview.warPointCost !== undefined &&
+        preview.warPointCost <= hud.warPointsBalance,
+      );
+      const qualityColor = card ? QUALITY_COLOR[card.quality] : '#789397';
+      const borderColor = affordable
+        ? '#ffd36d'
+        : atCap || full
+          ? 'rgba(154,169,168,.38)'
+          : `${qualityColor}72`;
+      const affordablePulse = affordable ? .68 + Math.sin(Date.now() / 120 + index) * .14 : 0;
+
+      this.context.save();
+      this.context.fillStyle = affordable
+        ? `rgba(49, 58, 36, ${.86 + Math.max(flashStrength, affordablePulse) * .08})`
+        : 'rgba(4, 17, 34, .88)';
+      this.context.strokeStyle = borderColor;
+      this.context.lineWidth = affordable ? 2.5 + flashStrength * 1.5 : 1.5;
+      this.context.shadowColor = affordable ? `rgba(255, 211, 109, ${.2 + flashStrength * .42})` : 'transparent';
+      this.context.shadowBlur = affordable ? 8 + flashStrength * 15 : 0;
+      this.roundRect(x, y, width, height, 16);
+      this.context.fill();
+      this.context.stroke();
+      this.context.restore();
+
+      this.context.fillStyle = affordable ? '#ffd36d' : `${qualityColor}b8`;
+      this.roundRect(x + 7, y + 12, 4, height - 24, 2);
+      this.context.fill();
+      this.pill(
+        x + 16,
+        compact ? y + 10 : y + 13,
+        28,
+        compact ? 28 : 22,
+        String(index + 1),
+        affordable ? 'rgba(132, 99, 30, .46)' : 'rgba(112,139,143,.16)',
+        affordable ? '#ffd36d' : 'rgba(210,225,220,.58)',
+        12,
+        8,
+      );
+
+      if (!card || !preview) {
+        const emptyLabel = full
+          ? compact ? '本波已满' : '本波兑换次数已用完'
+          : '报价准备中';
+        this.fitText(
+          emptyLabel,
+          x + 58,
+          compact ? y + 29 : y + 34,
+          width - 76,
+          16,
+          full ? 'rgba(197,207,203,.48)' : 'rgba(220,232,227,.62)',
+          'left',
+          650,
+          9,
+          CARD_BODY_FONT,
+        );
+        this.fitText(
+          full
+            ? compact ? '下波刷新' : '下一波自动刷新三项法门'
+            : compact ? '固定报价生成中' : '正在生成本波固定报价',
+          x + 58,
+          compact ? y + 60 : y + 59,
+          width - 76,
+          12,
+          'rgba(188,205,202,.40)',
+          'left',
+          500,
+          8,
+          CARD_BODY_FONT,
+        );
+      } else {
+        const cardIconAssetId = resolveCardIconAssetId(card);
+        const icon = this.images.get(cardIconAssetId);
+        if (icon) {
+          this.context.save();
+          this.context.globalAlpha = affordable ? 1 : .64;
+          this.context.drawImage(
+            icon,
+            layout.iconX,
+            layout.iconY,
+            layout.iconSize,
+            layout.iconSize,
+          );
+          this.context.restore();
+        } else {
+          this.context.save();
+          this.context.translate(
+            layout.iconX + layout.iconSize / 2,
+            layout.iconY + layout.iconSize / 2,
+          );
+          this.drawMissingAssetMarker(cardIconAssetId, layout.iconSize, layout.iconSize);
+          this.context.restore();
+        }
+        const metric = cardMetricPresentation(card, preview).rows[0];
+        const presentation = resolveShopShortcutText({
+          compact,
+          qualityName: QUALITY_NAME[card.quality],
+          cardName: card.name,
+          metric,
+          cost: preview.warPointCost ?? 0,
+          shortfall: Math.max(0, (preview.warPointCost ?? 0) - hud.warPointsBalance),
+          full,
+          atCap,
+          affordable,
+        });
+        this.fitText(
+          presentation.title,
+          layout.textX,
+          y + 29,
+          layout.textWidth,
+          15,
+          affordable ? '#f5ead0' : 'rgba(224,231,222,.68)',
+          'left',
+          700,
+          9,
+          CARD_SERIF_FONT,
+        );
+        this.fitText(
+          presentation.metric,
+          layout.textX,
+          y + 60,
+          layout.textWidth,
+          12,
+          affordable ? 'rgba(226,239,224,.68)' : 'rgba(190,207,203,.46)',
+          'left',
+          520,
+          8,
+          CARD_NUMBER_FONT,
+        );
+
+        this.fittedPill(
+          layout.actionX,
+          layout.priceY,
+          layout.actionWidth,
+          layout.actionHeight,
+          presentation.price,
+          affordable ? 'rgba(111, 79, 21, .55)' : 'rgba(90,105,105,.18)',
+          affordable ? '#f6d379' : 'rgba(215,224,218,.58)',
+          12,
+          8,
+        );
+        this.fittedPill(
+          layout.actionX,
+          layout.statusY,
+          layout.actionWidth,
+          layout.actionHeight,
+          presentation.status,
+          affordable ? 'rgba(102, 78, 28, .62)' : 'rgba(70,88,91,.18)',
+          affordable ? '#ffd36d' : atCap ? '#b9c3be' : 'rgba(202,216,212,.56)',
+          12,
+          8,
+        );
+      }
+
+      if (hud.flowState === 'preparing' || hud.flowState === 'running') {
+        this.interactions.push({
+          id: `shop-shortcut:${index as 0 | 1 | 2}`,
+          x,
+          y,
+          width,
+          height,
+        });
+      }
+    }
   }
 
   private drawEndlessHudProgress(
@@ -4381,7 +4793,7 @@ export class CanvasRenderer {
       CARD_BODY_FONT,
     );
     this.text(
-      fixedShop ? '选择本波增援' : '择一法门，守住关城',
+      fixedShop ? '选择本波法门' : '择一法门，守住关城',
       960,
       164,
       typography.heading,
@@ -4494,7 +4906,8 @@ export class CanvasRenderer {
       this.context.arc(x + cardWidth / 2, iconCenterY, 66, 0, Math.PI * 2);
       this.context.fill();
 
-      const icon = this.images.get(card.iconAssetId);
+      const cardIconAssetId = resolveCardIconAssetId(card);
+      const icon = this.images.get(cardIconAssetId);
       if (icon) {
         this.context.globalAlpha = disabled ? .56 : 1;
         this.context.drawImage(
@@ -4506,12 +4919,14 @@ export class CanvasRenderer {
         );
         this.context.globalAlpha = 1;
       } else {
-        this.drawSeal(
-          x + cardWidth / 2,
-          iconCenterY,
-          contentLayout.iconSize / 2,
-          card.effectId === 'tower-count' ? '塔' : '法',
+        this.context.save();
+        this.context.translate(x + cardWidth / 2, iconCenterY);
+        this.drawMissingAssetMarker(
+          cardIconAssetId,
+          contentLayout.iconSize,
+          contentLayout.iconSize,
         );
+        this.context.restore();
       }
 
       this.fitText(
@@ -4612,7 +5027,7 @@ export class CanvasRenderer {
         selectedCost <= hud.warPointsBalance &&
         !(selectedPreview?.capped && cardPreviewIsUnchanged(selectedCard, selectedPreview));
       const confirmLabel = selectedCost === undefined
-        ? '先选择一项增援'
+        ? '先选择一项法门'
         : `${selectedCost} 战功 · 确认兑换`;
       if (confirmEnabled) {
         const confirmX = 900;
@@ -4861,7 +5276,7 @@ export class CanvasRenderer {
     );
 
     const selectedTowerId = state.selectedTowerId;
-    ([0, 1, 2] as const).filter((towerId) => this.activeTowerIds.has(towerId)).forEach((towerId, index) => {
+    TOWER_IDS.filter((towerId) => this.activeTowerIds.has(towerId)).forEach((towerId, index) => {
       const selected = towerId === selectedTowerId;
       const visual = TOWER_VISUALS[towerId];
       const x = panelX + 54 + index * 206;
@@ -5001,7 +5416,15 @@ export class CanvasRenderer {
   private drawPauseOverlay(): void {
     this.drawModalShade();
     this.drawPanel(660, 240, 600, 600, '#62d8d3');
-    this.drawSeal(960, 370, 68, 'Ⅱ');
+    const pauseIcon = this.images.get('ICON_PAUSE');
+    if (pauseIcon) {
+      this.context.drawImage(pauseIcon, 892, 302, 136, 136);
+    } else {
+      this.context.save();
+      this.context.translate(960, 370);
+      this.drawMissingAssetMarker('ICON_PAUSE', 136, 136);
+      this.context.restore();
+    }
     this.text('潮声暂歇', 960, 474, 21, '#6fded9', 'center', 650);
     this.text('战斗已暂停', 960, 536, 48, '#f2e7cb', 'center', 800);
     this.drawButton('hud-strategy', 790, 598, 340, 64, '查看箭塔战策', 'rgba(74,181,177,.16)', '#7ee1dc', '#4b9898', 23, 13);
@@ -5470,6 +5893,43 @@ export class CanvasRenderer {
     this.interactions.push({ id, x, y, width, height });
   }
 
+  private drawImageButton(
+    id: InteractionId,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    assetId: string,
+    _fallbackLabel: string,
+    background: string,
+    _foreground: string,
+    border?: string,
+  ): void {
+    this.context.fillStyle = background;
+    this.context.strokeStyle = border ?? background;
+    this.context.lineWidth = 2;
+    this.roundRect(x, y, width, height, Math.min(18, height / 2));
+    this.context.fill();
+    this.context.stroke();
+    const image = this.images.get(assetId);
+    if (image) {
+      const size = Math.min(width - 22, height - 14);
+      this.context.drawImage(
+        image,
+        x + (width - size) / 2,
+        y + (height - size) / 2,
+        size,
+        size,
+      );
+    } else {
+      this.context.save();
+      this.context.translate(x + width / 2, y + height / 2);
+      this.drawMissingAssetMarker(assetId, Math.max(28, width - 20), Math.max(28, height - 12));
+      this.context.restore();
+    }
+    this.interactions.push({ id, x, y, width, height });
+  }
+
   private pill(
     x: number,
     y: number,
@@ -5493,6 +5953,35 @@ export class CanvasRenderer {
       color,
       'center',
       700,
+    );
+  }
+
+  private fittedPill(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    label: string,
+    background: string,
+    color: string,
+    fontSize: number,
+    minScreenPx = 0,
+  ): void {
+    this.context.fillStyle = background;
+    this.roundRect(x, y, width, height, height / 2);
+    this.context.fill();
+    this.fitText(
+      label,
+      x + width / 2,
+      y + height / 2,
+      width - 12,
+      fontSize,
+      color,
+      'center',
+      700,
+      minScreenPx,
+      CARD_BODY_FONT,
+      'middle',
     );
   }
 
@@ -5607,7 +6096,12 @@ export class CanvasRenderer {
   }
 
   private towerCenter(): DesignPoint {
-    const anchors = this.bundle.route.towerAnchors;
+    const anchors = TOWER_IDS.flatMap((towerId) => {
+      if (!this.activeTowerIds.has(towerId)) return [];
+      const point = this.towerPositions[towerId];
+      return point ? [point] : [];
+    });
+    if (anchors.length === 0) return { ...this.bundle.route.breachPoint };
     return {
       x: anchors.reduce((sum, anchor) => sum + anchor.x, 0) / anchors.length,
       y: anchors.reduce((sum, anchor) => sum + anchor.y, 0) / anchors.length,

@@ -5,10 +5,8 @@ import {
 } from '../src/core/battle-sim';
 import {
   createStage01Bundle,
-  createStage02Bundle,
   createStage08Bundle,
 } from '../src/core/content';
-import { LEGACY_WARLESS_CONFIG_HASH_BY_STAGE } from '../src/core/content-compat';
 import type {
   BattleBundleV1,
   BattleCommand,
@@ -24,6 +22,12 @@ interface SmokeAssert {
   ok(value: unknown, message?: string): asserts value;
   throws(callback: () => unknown, message?: string): Error;
 }
+
+type BattleCommandWithoutSeq = BattleCommand extends infer Candidate
+  ? Candidate extends { seq: number }
+    ? Omit<Candidate, 'seq'>
+    : never
+  : never;
 
 const assert: SmokeAssert = {
   equal(actual: unknown, expected: unknown, message?: string): void {
@@ -56,7 +60,6 @@ const assert: SmokeAssert = {
 };
 
 const FAST_SEED = 0x57a7_9001;
-const TOWER_CARD_ID = 'CARD_TOWER_REINFORCEMENT';
 const MASTERY_CARD_ID = 'CARD_BASIC_CRITICAL_MASTERY_G';
 const DAMAGE_CARD_ID = 'CARD_BASIC_DAMAGE_G';
 const FREQUENCY_CARD_ID = 'CARD_BASIC_FREQUENCY_G';
@@ -72,6 +75,7 @@ function createFastCampaignBundle(): BattleBundleV1 {
     { x: 700, y: 240 },
     { x: 1_220, y: 240 },
     { x: 960, y: 520 },
+    { x: 700, y: 800 },
   ];
   bundle.tower.baseDamageMilli = 1_000_000;
   bundle.tower.attackIntervalTicks = 12;
@@ -135,7 +139,7 @@ function createFastCampaignBundle(): BattleBundleV1 {
 function applyCommand(
   simulation: BattleSimulation,
   seq: number,
-  command: Omit<BattleCommand, 'seq'>,
+  command: BattleCommandWithoutSeq,
   expectedStatus: 'applied' | 'duplicate' | 'rejected' = 'applied',
 ): SimulationOutput {
   const output = simulation.applyCommand({ seq, ...command } as BattleCommand);
@@ -173,7 +177,7 @@ function grantOffer(
 function advanceUntil(
   simulation: BattleSimulation,
   predicate: (hud: HudProjectionV1, events: BattleEvent[]) => boolean,
-  maximumTicks = 300,
+  maximumTicks = 2_000,
 ): BattleEvent[] {
   const events: BattleEvent[] = [];
   for (let tick = 0; tick < maximumTicks; tick += 1) {
@@ -187,37 +191,107 @@ function advanceUntil(
   throw new Error(`War-point fixture did not reach its target within ${maximumTicks} ticks.`);
 }
 
-function reachThirdWave(simulation: BattleSimulation): BattleEvent[] {
-  return advanceUntil(simulation, (hud) => hud.waveIndex === 3);
+function startPreparedWave(simulation: BattleSimulation, seq: number): number {
+  if (simulation.getHudProjection().flowState !== 'preparing') return seq;
+  applyCommand(simulation, seq, { type: 'START_WAVE' });
+  return seq + 1;
+}
+
+function reachThirdWave(simulation: BattleSimulation, firstSeq = 1): number {
+  let nextSeq = firstSeq;
+  for (let tick = 0; tick < 2_000; tick += 1) {
+    const hud = simulation.getHudProjection();
+    if (hud.waveIndex === 3) return nextSeq;
+    if (hud.flowState === 'preparing') {
+      nextSeq = startPreparedWave(simulation, nextSeq);
+      continue;
+    }
+    if (hud.flowState !== 'running') {
+      throw new Error(`War-point fixture stalled in ${hud.flowState}.`);
+    }
+    simulation.advanceTicks(1);
+  }
+  throw new Error('War-point fixture did not reach wave three.');
 }
 
 const initialBundle = createFastCampaignBundle();
 const initialSimulation = createBattleSimulation(initialBundle, FAST_SEED);
 const initialHud = initialSimulation.getHudProjection();
 assert.deepEqual(initialHud.activeTowerIds, [0, 1], 'Fixed campaigns must start with two towers.');
+assert.equal(initialHud.aimAnglesU16.length, 4);
+assert.equal(initialHud.towerPositions.length, 4);
 assert.deepEqual(
   initialHud.towerRuntime.map((tower) => [tower.towerId, tower.active]),
-  [[0, true], [1, true], [2, false]],
+  [[0, true], [1, true], [2, false], [3, false]],
 );
 assert.equal(initialHud.warPointsBalance, 0);
 assert.equal(initialHud.warPointsEarned, 0);
 assert.equal(initialHud.shopPurchaseLimitPerWave, 2);
 assert.equal(initialHud.shopPurchasesThisWave, 0);
+assert.equal(initialHud.shopOfferOrdinal, 0);
+assert.equal(initialHud.shopOffer, undefined);
+assert.equal(initialHud.shopOfferPreviews, undefined);
 
 const earlyOpen = applyCommand(initialSimulation, 1, { type: 'OPEN_SHOP' });
+assert.equal(
+  initialSimulation.getHudProjection().warPointsBalance,
+  initialHud.warPointsBalance,
+  'Opening shortcuts must never charge war points directly.',
+);
 const earlyRequest = offerRequest(earlyOpen);
-assert.ok(!earlyRequest.eligibleEffectIds.includes('tower-count'), 'Tower card unlocked before two cleared waves.');
+assert.ok(!earlyRequest.eligibleEffectIds.includes('tower-count'));
 assert.equal(initialSimulation.getHudProjection().flowState, 'offer-pending');
 const earlyOffer = grantOffer(initialSimulation, earlyRequest.ordinal);
-assert.equal(initialSimulation.getHudProjection().activeOffer?.offerId, earlyOffer.offerId);
+const earlyPendingHud = initialSimulation.getHudProjection();
+assert.equal(earlyPendingHud.activeOffer?.offerId, earlyOffer.offerId);
+assert.equal(earlyPendingHud.shopOffer?.offerId, earlyOffer.offerId);
+assert.equal(earlyPendingHud.shopOfferOrdinal, earlyRequest.ordinal);
+assert.equal(earlyPendingHud.shopOfferPreviews?.length, 3);
+assert.ok(
+  earlyPendingHud.shopOfferPreviews?.every((preview) => preview.warPointCost > 0),
+  'All three fixed shortcut slots must be priced skills.',
+);
+assert.ok(
+  earlyPendingHud.shopOffer?.cards.every((cardId) =>
+    initialBundle.cards.find((card) => card.id === cardId)?.effectId !== 'tower-count'),
+  'The shortcut quote must not contain the legacy tower-count card.',
+);
+assert.deepEqual(
+  earlyPendingHud.shopOfferPreviews?.map((preview) => preview.warPointCost),
+  earlyPendingHud.offerPreviews?.map((preview) => preview.warPointCost),
+  'Shortcut prices must use the same authoritative projection as the purchase overlay.',
+);
 applyCommand(initialSimulation, 2, { type: 'CLOSE_SHOP' });
-assert.equal(initialSimulation.getHudProjection().flowState, 'running');
+const earlyClosedHud = initialSimulation.getHudProjection();
+assert.equal(earlyClosedHud.flowState, 'preparing');
+assert.equal(
+  earlyClosedHud.warPointsBalance,
+  initialHud.warPointsBalance,
+  'Closing an unpurchased shortcut quote must not charge war points.',
+);
+assert.equal(earlyClosedHud.activeOffer, undefined, 'Closed shop must not expose an active modal offer.');
+assert.equal(earlyClosedHud.offerPreviews, undefined, 'Closed shop must not expose modal-only previews.');
+assert.equal(earlyClosedHud.shopOffer?.offerId, earlyOffer.offerId);
+assert.equal(earlyClosedHud.shopOfferPreviews?.length, 3);
+const earlyClosedCheckpoint = initialSimulation.createCheckpoint();
+const earlyClosedRestored = createBattleSimulation(initialBundle, FAST_SEED, earlyClosedCheckpoint);
+assert.deepEqual(
+  earlyClosedRestored.getHudProjection().shopOffer,
+  earlyClosedHud.shopOffer,
+  'Restoring a closed shop must preserve its fixed quote without generating a new one.',
+);
+assert.deepEqual(
+  earlyClosedRestored.getHudProjection().shopOfferPreviews,
+  earlyClosedHud.shopOfferPreviews,
+  'Restoring a closed shop must preserve authoritative shortcut prices and previews.',
+);
 
-applyCommand(initialSimulation, 3, { type: 'PAUSE' });
-const pausedOpen = applyCommand(initialSimulation, 4, { type: 'OPEN_SHOP' });
+applyCommand(initialSimulation, 3, { type: 'START_WAVE' });
+applyCommand(initialSimulation, 4, { type: 'PAUSE' });
+const pausedOpen = applyCommand(initialSimulation, 5, { type: 'OPEN_SHOP' });
 assert.equal(pausedOpen.flowRequests.length, 0, 'Reopening a cached offer must not reroll it.');
 assert.equal(initialSimulation.getHudProjection().activeOffer?.offerId, earlyOffer.offerId);
-applyCommand(initialSimulation, 5, { type: 'CLOSE_SHOP' });
+applyCommand(initialSimulation, 6, { type: 'CLOSE_SHOP' });
 assert.equal(initialSimulation.getHudProjection().flowState, 'paused');
 
 const insufficientBundle = createFastCampaignBundle();
@@ -243,6 +317,7 @@ assert.equal(insufficientSimulation.getHudProjection().flowState, 'offer-pending
 
 const killBundle = createFastCampaignBundle();
 const killSimulation = createBattleSimulation(killBundle, FAST_SEED + 2);
+applyCommand(killSimulation, 1, { type: 'START_WAVE' });
 const lethalEvents = advanceUntil(
   killSimulation,
   (_hud, events) => events.some((event) => event.type === 'DEATH'),
@@ -264,19 +339,64 @@ const lethalWarPointTotal = lethalEvents.reduce(
 );
 assert.equal(killSimulation.getHudProjection().warPointsBalance, lethalWarPointTotal);
 assert.equal(killSimulation.getHudProjection().warPointsEarned, lethalWarPointTotal);
+assert.equal(
+  lethalEvents.filter((event) => event.type === 'WAR_POINTS_GAINED' && event.source === 'kill').length,
+  lethalEvents.filter((event) => event.type === 'DEATH').length,
+  'Kill war points must originate one-for-one from real lethal deaths.',
+);
+
+const bonusBundle = createFastCampaignBundle();
+bonusBundle.route.towerAnchors[0] = { x: 700, y: 120 };
+bonusBundle.route.towerAnchors[1] = { x: 1_220, y: 120 };
+bonusBundle.waves[0]!.groups = [{
+  enemyId: 'MON_TIDE_IMP',
+  count: 3,
+  intervalTicks: 15,
+}];
+const bonusSimulation = createBattleSimulation(bonusBundle, FAST_SEED + 20);
+applyCommand(bonusSimulation, 1, { type: 'SET_AIM', towerId: 0, angleU16: 0 });
+applyCommand(bonusSimulation, 2, { type: 'SET_AIM', towerId: 1, angleU16: 32_768 });
+applyCommand(bonusSimulation, 3, { type: 'START_WAVE' });
+const bonusEvents = advanceUntil(
+  bonusSimulation,
+  (hud) => hud.waveIndex === 2 && hud.flowState === 'preparing',
+);
+const focusedBonus = bonusEvents.find(
+  (event): event is Extract<BattleEvent, { type: 'WAR_POINTS_GAINED' }> =>
+    event.type === 'WAR_POINTS_GAINED' && event.source === 'focused-kills',
+);
+const waveClearBonus = bonusEvents.find(
+  (event): event is Extract<BattleEvent, { type: 'WAR_POINTS_GAINED' }> =>
+    event.type === 'WAR_POINTS_GAINED' && event.source === 'wave-clear',
+);
+assert.ok(focusedBonus, 'Three focused kills must grant the focused-kill bonus.');
+assert.equal(focusedBonus.amount, 1);
+assert.ok(waveClearBonus, 'A no-breach wave clear must grant its completion bonus.');
+assert.equal(waveClearBonus.amount, 4);
 
 const skillBundle = createFastCampaignBundle();
 const skillSimulation = createBattleSimulation(skillBundle, FAST_SEED + 3);
-reachThirdWave(skillSimulation);
+const nextSkillCommandSeq = reachThirdWave(skillSimulation);
 const skillBeforeOpen = skillSimulation.getHudProjection();
-assert.ok(skillBeforeOpen.warPointsBalance >= (skillBundle.rules.towerBuildCost ?? 0));
-const skillRequest = offerRequest(applyCommand(skillSimulation, 1, { type: 'OPEN_SHOP' }));
-assert.ok(skillRequest.eligibleEffectIds.includes('tower-count'), 'Tower card must unlock after two waves.');
+assert.equal(skillBeforeOpen.flowState, 'preparing');
+assert.ok(skillBeforeOpen.warPointsBalance >= 32, 'Two cleared waves must fund two basic skill purchases.');
+const skillRequest = offerRequest(
+  applyCommand(skillSimulation, nextSkillCommandSeq, { type: 'OPEN_SHOP' }),
+);
+assert.ok(
+  !skillRequest.eligibleEffectIds.includes('tower-count'),
+  'Tower construction must remain outside all three skill shortcuts after wave two.',
+);
 const skillOffer = grantOffer(
   skillSimulation,
   skillRequest.ordinal,
   1,
-  [DAMAGE_CARD_ID, MASTERY_CARD_ID, TOWER_CARD_ID],
+  [DAMAGE_CARD_ID, MASTERY_CARD_ID, FREQUENCY_CARD_ID],
+);
+assert.deepEqual(
+  skillSimulation.getHudProjection().shopOffer?.cards,
+  [DAMAGE_CARD_ID, MASTERY_CARD_ID, FREQUENCY_CARD_ID],
+  'All three shortcut slots must remain priced skills.',
 );
 const masteryCard = skillBundle.cards.find((card) => card.id === MASTERY_CARD_ID);
 if (!masteryCard?.warPointCost) throw new Error('Critical mastery smoke card is missing its price.');
@@ -311,7 +431,11 @@ assert.equal(purchasedEvent.cost, masteryCard.warPointCost);
 assert.equal(purchasedEvent.balance, skillAfterPurchase.warPointsBalance);
 assert.equal(skillAfterPurchase.shopPurchasesThisWave, 1);
 assert.equal(skillAfterPurchase.shopPurchasedThisWave, false);
-const secondSkillRequest = offerRequest(applyCommand(skillSimulation, 2, { type: 'OPEN_SHOP' }));
+assert.equal(skillAfterPurchase.shopOffer, undefined, 'A purchased quote must leave the shortcut cache.');
+const secondSkillRequest = offerRequest(
+  applyCommand(skillSimulation, nextSkillCommandSeq + 1, { type: 'OPEN_SHOP' }),
+);
+assert.ok(!secondSkillRequest.eligibleEffectIds.includes('tower-count'));
 const secondSkillOffer = grantOffer(
   skillSimulation,
   secondSkillRequest.ordinal,
@@ -327,72 +451,33 @@ skillSimulation.applyAuthorityEvent({
 });
 assert.equal(skillSimulation.getHudProjection().shopPurchasesThisWave, 2);
 assert.equal(skillSimulation.getHudProjection().shopPurchasedThisWave, true);
-applyCommand(skillSimulation, 3, { type: 'OPEN_SHOP' }, 'rejected');
+assert.equal(skillSimulation.getHudProjection().shopOffer, undefined);
+assert.equal(skillSimulation.getHudProjection().shopOfferPreviews, undefined);
+applyCommand(skillSimulation, nextSkillCommandSeq + 2, { type: 'OPEN_SHOP' }, 'rejected');
 
-const towerBundle = createFastCampaignBundle();
-const towerSimulation = createBattleSimulation(towerBundle, FAST_SEED + 4);
-reachThirdWave(towerSimulation);
-const towerRequest = offerRequest(applyCommand(towerSimulation, 1, { type: 'OPEN_SHOP' }));
-assert.ok(towerRequest.eligibleEffectIds.includes('tower-count'));
-const towerOffer = grantOffer(
-  towerSimulation,
-  towerRequest.ordinal,
-  1,
-  [DAMAGE_CARD_ID, MASTERY_CARD_ID, TOWER_CARD_ID],
-);
-const towerBeforePurchase = towerSimulation.getHudProjection();
-const towerPurchase = towerSimulation.applyAuthorityEvent({
-  type: 'CARD_CHOICE_ACCEPTED',
-  authoritySeq: 2,
-  authorizationId: 'war-points-smoke-tower-choice',
-  offerId: towerOffer.offerId,
-  cardId: TOWER_CARD_ID,
-});
-const towerAfterPurchase = towerSimulation.getHudProjection();
-assert.deepEqual(towerAfterPurchase.activeTowerIds, [0, 1, 2]);
-assert.equal(towerAfterPurchase.towerRuntime[2]?.active, true);
-assert.equal(
-  towerAfterPurchase.warPointsBalance,
-  towerBeforePurchase.warPointsBalance - (towerBundle.rules.towerBuildCost ?? 0),
-);
-const towerUnlocked = towerPurchase.events.find(
-  (event): event is Extract<BattleEvent, { type: 'TOWER_UNLOCKED' }> => event.type === 'TOWER_UNLOCKED',
-);
-assert.ok(towerUnlocked);
-assert.equal(towerUnlocked.towerId, 2);
-assert.equal(towerUnlocked.activeTowerCount, 3);
-const reinforcedAttackEvents = advanceUntil(
-  towerSimulation,
-  (_hud, events) => events.some(
-    (event) => event.type === 'ATTACK_RELEASE' && event.towerId === 2,
-  ),
-  60,
-);
-assert.ok(
-  reinforcedAttackEvents.some(
-    (event) => event.type === 'ATTACK_RELEASE' && event.towerId === 2,
-  ),
-  'The reinforced third tower must enter the firing loop immediately.',
-);
-
-const checkpoint = towerSimulation.createCheckpoint();
+const checkpoint = skillSimulation.createCheckpoint();
 const checkpointEnvelope = JSON.parse(new TextDecoder().decode(checkpoint)) as {
   schemaVersion: number;
   state: Record<string, unknown>;
 };
-assert.equal(checkpointEnvelope.schemaVersion, 6);
-const checkpointRestored = createBattleSimulation(towerBundle, FAST_SEED + 4, checkpoint);
-assert.equal(checkpointRestored.getChecksum(), towerSimulation.getChecksum());
+assert.equal(checkpointEnvelope.schemaVersion, 7);
+const checkpointRestored = createBattleSimulation(skillBundle, FAST_SEED + 3, checkpoint);
+assert.equal(checkpointRestored.getChecksum(), skillSimulation.getChecksum());
 assert.deepEqual(checkpointRestored.createCheckpoint(), checkpoint);
 
 const legacySource = createBattleSimulation(createStage01Bundle(), FAST_SEED + 5);
 const legacyEnvelope = JSON.parse(new TextDecoder().decode(legacySource.createCheckpoint())) as {
   schemaVersion: number;
-  configHash: string;
-  state: Record<string, unknown>;
+  state: Record<string, any>;
 };
 legacyEnvelope.schemaVersion = 5;
+legacyEnvelope.state.flowState = 'running';
+legacyEnvelope.state.scheduler.nextSpawnTick = 0;
+legacyEnvelope.state.aimAnglesU16.pop();
+legacyEnvelope.state.towerCooldowns.pop();
+delete legacyEnvelope.state.towerPositions;
 const warPointStateFields = [
+  'preparationTicksRemaining',
   'warPointsBalance',
   'warPointsEarned',
   'activeTowerIds',
@@ -419,130 +504,26 @@ assert.deepEqual(
   [0, 1, 2],
   'Legacy V5 runs must preserve their previously active third tower.',
 );
-const shippedV5Envelope = structuredClone(legacyEnvelope);
-const shippedStage01Hash = LEGACY_WARLESS_CONFIG_HASH_BY_STAGE.STAGE_01;
-if (!shippedStage01Hash) throw new Error('Stage 01 must declare its shipped V5 compatibility hash.');
-shippedV5Envelope.configHash = shippedStage01Hash;
-const migratedShippedV5 = createBattleSimulation(
-  createStage01Bundle(),
-  FAST_SEED + 5,
-  new TextEncoder().encode(JSON.stringify(shippedV5Envelope)),
-);
-assert.deepEqual(migratedShippedV5.getHudProjection().activeTowerIds, [0, 1, 2]);
-
-const liveLegacyBundle = createStage02Bundle();
-const liveLegacyHash = LEGACY_WARLESS_CONFIG_HASH_BY_STAGE.STAGE_02;
-if (!liveLegacyHash) throw new Error('Stage 02 must declare its shipped V5 compatibility hash.');
-liveLegacyBundle.configHash = liveLegacyHash;
-liveLegacyBundle.tower.baseDamageMilli = 100_000_000;
-liveLegacyBundle.tower.projectileSpeedPxPerSecond = 100_000;
-const liveLegacyFinalWave = liveLegacyBundle.waves[4];
-if (!liveLegacyFinalWave) throw new Error('Stage 02 final wave fixture is missing.');
-liveLegacyFinalWave.hpMultiplierBp = 46_000;
-liveLegacyFinalWave.speedMultiplierBp = 14_000;
-const liveLegacySimulation = createBattleSimulation(liveLegacyBundle, FAST_SEED + 6);
-for (let tick = 0; tick < 10_000; tick += 1) {
-  liveLegacySimulation.advanceTicks(1);
-  if (liveLegacySimulation.getHudProjection().waveIndex === 5) break;
-}
-assert.equal(liveLegacySimulation.getHudProjection().waveIndex, 5);
-liveLegacyBundle.tower.rangePx = 1;
-let liveLegacyEnvelope: any;
-for (let tick = 0; tick < 1_000; tick += 1) {
-  liveLegacySimulation.advanceTicks(1);
-  const candidate = JSON.parse(
-    new TextDecoder().decode(liveLegacySimulation.createCheckpoint()),
-  ) as any;
-  if (candidate.state.enemies.length > 0) {
-    liveLegacyEnvelope = candidate;
-    break;
-  }
-}
-assert.ok(liveLegacyEnvelope, 'Stage 02 V5 fixture must contain an active final-wave enemy.');
-liveLegacyEnvelope.schemaVersion = 5;
-liveLegacyEnvelope.configHash = liveLegacyHash;
-for (const field of warPointStateFields) delete liveLegacyEnvelope.state[field];
-const liveLegacyEnemy = liveLegacyEnvelope.state.enemies[0];
-liveLegacyEnemy.hpMilli = Math.max(1, Math.floor(liveLegacyEnemy.maxHpMilli * 0.37));
-const oldLiveHp = liveLegacyEnemy.hpMilli;
-const oldLiveMaxHp = liveLegacyEnemy.maxHpMilli;
-assert.equal(liveLegacyEnemy.speedMultiplierBp, 14_000);
-const migratedLiveV5 = createBattleSimulation(
-  createStage02Bundle(),
-  FAST_SEED + 6,
-  new TextEncoder().encode(JSON.stringify(liveLegacyEnvelope)),
-);
-const migratedLiveEnvelope = JSON.parse(
-  new TextDecoder().decode(migratedLiveV5.createCheckpoint()),
-) as any;
-const migratedLiveEnemy = migratedLiveEnvelope.state.enemies[0];
-const currentStage02 = createStage02Bundle();
-const currentFinalWave = currentStage02.waves[4];
-const currentDefinition = currentStage02.enemies[liveLegacyEnemy.definitionId];
-if (!currentFinalWave || !currentDefinition) {
-  throw new Error('Current Stage 02 final-wave migration content is missing.');
-}
-const expectedMigratedMaxHp = Math.floor(
-  (currentDefinition.maxHpMilli * currentFinalWave.hpMultiplierBp + 5_000) / 10_000,
-);
-const expectedMigratedHp = Math.max(
-  1,
-  Number(
-    (BigInt(oldLiveHp) * BigInt(expectedMigratedMaxHp) +
-      BigInt(Math.floor(oldLiveMaxHp / 2))) /
-      BigInt(oldLiveMaxHp),
-  ),
-);
-assert.equal(migratedLiveEnemy.maxHpMilli, expectedMigratedMaxHp);
-assert.equal(migratedLiveEnemy.hpMilli, expectedMigratedHp);
+assert.equal(migratedV5.getHudProjection().aimAnglesU16.length, 4);
+assert.equal(migratedV5.getHudProjection().towerPositions.length, 4);
 assert.equal(
-  migratedLiveEnemy.expAward,
-  Math.max(1, Math.floor((currentDefinition.exp * currentFinalWave.expMultiplierBp) / 10_000)),
-);
-assert.equal(migratedLiveEnemy.speedMultiplierBp, 13_000);
-
-assert.ok(
-  liveLegacyEnemy.ageTicks > 0 && liveLegacyEnemy.distanceMilli > 0,
-  'Stage 02 active-enemy fixture must have moved before legacy validation checks.',
-);
-const assertLegacyEnemyMutationRejected = (
-  mutate: (enemy: Record<string, any>) => void,
-  message: string,
-): void => {
-  const tamperedEnvelope = structuredClone(liveLegacyEnvelope);
-  const tamperedEnemy = tamperedEnvelope.state.enemies[0] as Record<string, any> | undefined;
-  if (!tamperedEnemy) throw new Error('Tampered Stage 02 legacy fixture enemy is missing.');
-  mutate(tamperedEnemy);
-  assert.throws(
-    () => createBattleSimulation(
-      createStage02Bundle(),
-      FAST_SEED + 6,
-      new TextEncoder().encode(JSON.stringify(tamperedEnvelope)),
-    ),
-    message,
-  );
-};
-assertLegacyEnemyMutationRejected(
-  (enemy) => { enemy.maxHpMilli += 1; },
-  'Legacy V5 migration must reject a forged enemy max HP.',
-);
-assertLegacyEnemyMutationRejected(
-  (enemy) => { enemy.expAward += 1; },
-  'Legacy V5 migration must reject a forged enemy EXP award.',
-);
-assertLegacyEnemyMutationRejected(
-  (enemy) => { enemy.speedMultiplierBp += 1; },
-  'Legacy V5 migration must reject a forged enemy speed multiplier.',
-);
-assertLegacyEnemyMutationRejected(
-  (enemy) => { enemy.distanceMilli = 0; },
-  'Legacy V5 migration must reject an enemy behind its old-speed travel bound.',
+  (JSON.parse(new TextDecoder().decode(migratedV5.createCheckpoint())) as { schemaVersion: number })
+    .schemaVersion,
+  7,
 );
 
 const endlessSimulation = createBattleSimulation(createStage08Bundle(), FAST_SEED + 7);
 const endlessHud = endlessSimulation.getHudProjection();
 assert.deepEqual(endlessHud.activeTowerIds, [0, 1, 2]);
+assert.equal(endlessHud.aimAnglesU16.length, 3);
+assert.equal(endlessHud.towerPositions.length, 3);
+assert.equal(endlessHud.towerBuild.nextTowerId, null);
+assert.equal(endlessHud.warPointsBalance, 0);
+assert.equal(endlessHud.warPointsEarned, 0);
 assert.equal(endlessHud.shopAvailable, false);
+assert.equal(endlessHud.shopOfferOrdinal, 0);
+assert.equal(endlessHud.shopOffer, undefined, 'Stage 08 must not project fixed-shop shortcuts.');
+assert.equal(endlessHud.shopOfferPreviews, undefined, 'Stage 08 must not project shortcut prices.');
 applyCommand(endlessSimulation, 1, { type: 'OPEN_SHOP' }, 'rejected');
 assert.equal(endlessSimulation.getHudProjection().flowState, 'running');
 
@@ -551,4 +532,4 @@ const fixedSkillEffects: CardEffectId[] = skillRequest.eligibleEffectIds.filter(
 );
 assert.ok(fixedSkillEffects.length >= 3, 'Fixed campaign shop must retain at least three skill effects.');
 
-console.log('✓ 战功击杀、商店暂停恢复、原子购买、第三塔解锁、V6/V5 checkpoint 与无尽隔离通过');
+console.log('✓ 战功来源、三技能快捷位、每波两次购买、V7/V5 checkpoint 与无尽隔离通过');
