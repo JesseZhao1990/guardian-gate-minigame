@@ -10,22 +10,22 @@ import type {
 } from './contracts';
 import { BATTLE_STAGE_ORDER } from './contracts';
 
-const STAGE_01_RELEASE_ID = 'GG_S01_ALPHA_V2';
-const STAGE_01_CONFIG_HASH = 'sha256:625f721bee82c5e1a4013c313d91e49325fa905bc09e32b59e6dd3327f47e022';
-const STAGE_02_RELEASE_ID = 'GG_S02_ALPHA_V4';
-const STAGE_02_CONFIG_HASH = 'sha256:cd35b88bfed572e3b2614a05427f5934e7b3460e547d6def51561b6ef00a060c';
-const STAGE_03_RELEASE_ID = 'GG_S03_ALPHA_V3';
-const STAGE_03_CONFIG_HASH = 'sha256:f499da5202c13130917d478bfc803c7e5861d88f652d469d148b94b13c47ff88';
-const STAGE_04_RELEASE_ID = 'GG_S04_ALPHA_V3';
-const STAGE_04_CONFIG_HASH = 'sha256:50f9d6d347498b96e9fb11a9de7f0e672b1f5b0d59d879ac87dad174cba1689c';
-const STAGE_05_RELEASE_ID = 'GG_S05_ALPHA_V3';
-const STAGE_05_CONFIG_HASH = 'sha256:f5e89e97765a33cc222809e4b9f2e31db09df8750f79f74b58487c2de763098a';
-const STAGE_06_RELEASE_ID = 'GG_S06_ALPHA_V2';
-const STAGE_06_CONFIG_HASH = 'sha256:e73d0601162822ad2623a946a4a377e4ff465304c646f7ff21824d64b2618f97';
-const STAGE_07_RELEASE_ID = 'GG_S07_ALPHA_V2';
-const STAGE_07_CONFIG_HASH = 'sha256:63ee858fe072a9fae6c39a7903d81e3ed30b6464442c7ed574c5b6686acbd90a';
-const STAGE_08_RELEASE_ID = 'GG_S08_ENDLESS_V2';
-const STAGE_08_CONFIG_HASH = 'sha256:2a02b1bc3bcccfc34b8ed396fab71e4beedad8cbcf9cf918ea87ccccf6fd06db';
+const STAGE_01_RELEASE_ID = 'GG_S01_ALPHA_V6';
+const STAGE_01_CONFIG_HASH = 'sha256:3d59cec7f433b1dc811942ff348b2e385913ee44221bd19b704caf280607db48';
+const STAGE_02_RELEASE_ID = 'GG_S02_ALPHA_V5';
+const STAGE_02_CONFIG_HASH = 'sha256:12d48cb073fbb14c85f3163300c87f652444d23d48719422b9513d4f5ca0c44a';
+const STAGE_03_RELEASE_ID = 'GG_S03_ALPHA_V4';
+const STAGE_03_CONFIG_HASH = 'sha256:29efd9baedbac7aa38253a3055b51b252cae8c082c41f2770a452e10eb52b7ab';
+const STAGE_04_RELEASE_ID = 'GG_S04_ALPHA_V4';
+const STAGE_04_CONFIG_HASH = 'sha256:4642979e9f4f02c1fba0a8f2e012fdadba4f8c110865f857f0b4c066b1ec1e60';
+const STAGE_05_RELEASE_ID = 'GG_S05_ALPHA_V4';
+const STAGE_05_CONFIG_HASH = 'sha256:381cf0b630eae3e1c2d3fcee72893f4c6767933821902b3bd8e9659983719438';
+const STAGE_06_RELEASE_ID = 'GG_S06_ALPHA_V3';
+const STAGE_06_CONFIG_HASH = 'sha256:c7461b29ea3895e12143dac5705c2dfddc7276ef9e4b45cfc8142c6c812c081d';
+const STAGE_07_RELEASE_ID = 'GG_S07_ALPHA_V3';
+const STAGE_07_CONFIG_HASH = 'sha256:0b4fb97ffde99bfe98b9f74252f0d1f75295e4139ac37f7dd0c4fb9c3af2a762';
+const STAGE_08_RELEASE_ID = 'GG_S08_ENDLESS_V3';
+const STAGE_08_CONFIG_HASH = 'sha256:6c0beb2d0aa1e7c137aeae931d3cf3f7cd0ea0597ac07947214510501e58cc3e';
 
 // Quantized offline from: 1 + 0.11 * minute + 0.018 * minute^1.35.
 // Index is elapsed whole seconds (0...1200); battle ticks only perform integer lookup.
@@ -135,21 +135,29 @@ const stage08ThreatLutBp: number[] = [
 ];
 
 const stage01RoutePoints: Point[] = [
-  { x: 1100, y: -60 },
-  { x: 1120, y: 120 },
-  { x: 1060, y: 280 },
-  { x: 1220, y: 440 },
-  { x: 1320, y: 590 },
-  { x: 1240, y: 740 },
-  { x: 1060, y: 870 },
-  { x: 820, y: 1010 },
-  { x: 680, y: 1140 },
+  // Monsters emerge from the visible fortress gate, then follow the complete
+  // stone road. These points trace the authored road centerline rather than
+  // bending onto the cliff shoulder to accommodate a tower.
+  { x: 1890, y: 220 },
+  { x: 1840, y: 240 },
+  { x: 1660, y: 320 },
+  { x: 1500, y: 400 },
+  { x: 1320, y: 500 },
+  { x: 1180, y: 620 },
+  { x: 1260, y: 740 },
+  { x: 1240, y: 840 },
+  { x: 1340, y: 960 },
+  { x: 1330, y: 1060 },
+  { x: 1240, y: 1180 },
 ];
 
-const stage01TowerAnchors: [Point, Point, Point] = [
-  { x: 1430, y: 180 },
-  { x: 1570, y: 560 },
-  { x: 1180, y: 970 },
+const stage01TowerAnchors: Point[] = [
+  { x: 1216, y: 320 },
+  // Keep tower 2 on the right shoulder so the road itself does not detour
+  // through grass to satisfy the authoritative 170px route clearance.
+  { x: 1504, y: 832 },
+  { x: 1728, y: 608 },
+  { x: 992, y: 480 },
 ];
 
 const enemies: Record<string, EnemyDefinition> = {
@@ -302,7 +310,7 @@ const stage04Enemies: Record<string, EnemyDefinition> = {
     renderAssetId: 'MON_ABYSS_WYRM',
     renderScaleBp: 11_200,
     enrageBelowHpBp: 5_000,
-    enrageSpeedMultiplierBp: 16_000,
+    enrageSpeedMultiplierBp: 25_000,
   },
 };
 
@@ -398,7 +406,7 @@ const stage06Enemies: Record<string, EnemyDefinition> = {
   MON_MIRAGE_MOTHER: {
     id: 'MON_MIRAGE_MOTHER',
     name: '万相蜃母',
-    maxHpMilli: 2_555_172,
+    maxHpMilli: 2_650_000,
     speedPxPerSecond: 43,
     radiusPx: 86,
     exp: 174,
@@ -521,7 +529,7 @@ const stage08Enemies: Record<string, EnemyDefinition> = {
     armorBp: 800,
     controlResistanceBp: 2_500,
     movement: 'flying',
-    renderAssetId: 'MON_SWIFT_EEL',
+    renderAssetId: 'MON_ABYSS_FLYING_EEL',
     renderScaleBp: 11_000,
   },
   BOSS_ABYSS_DRAGON: {
@@ -545,56 +553,56 @@ const stage01Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N01_01',
     index: 1,
-    hpMultiplierBp: 6_000,
-    expMultiplierBp: 6_000,
+    hpMultiplierBp: 5_500,
+    expMultiplierBp: 6_500,
     groups: [
-      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 18 },
-      { enemyId: 'MON_TIDE_IMP', count: 5, intervalTicks: 18 },
+      { enemyId: 'MON_TIDE_IMP', count: 12, intervalTicks: 17 },
     ],
   },
   {
     id: 'WAVE_N01_02',
     index: 2,
-    hpMultiplierBp: 9_000,
-    expMultiplierBp: 6_000,
+    hpMultiplierBp: 8_000,
+    expMultiplierBp: 6_500,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 8, intervalTicks: 17 },
-      { enemyId: 'MON_SWIFT_EEL', count: 6, intervalTicks: 15 },
+      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 13 },
+      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 12 },
     ],
   },
   {
     id: 'WAVE_N01_03',
     index: 3,
-    hpMultiplierBp: 11_650,
-    expMultiplierBp: 6_000,
+    hpMultiplierBp: 11_000,
+    expMultiplierBp: 6_300,
     groups: [
-      { enemyId: 'MON_SWIFT_EEL', count: 10, intervalTicks: 14 },
-      { enemyId: 'MON_TIDE_IMP', count: 6, intervalTicks: 15 },
+      { enemyId: 'MON_SHELL_CRAB', count: 2, intervalTicks: 12 },
+      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 15 },
+      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 13 },
     ],
   },
   {
     id: 'WAVE_N01_04',
     index: 4,
-    hpMultiplierBp: 20_000,
-    expMultiplierBp: 6_000,
+    hpMultiplierBp: 18_000,
+    expMultiplierBp: 6_100,
     speedMultiplierBp: 13_000,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 14 },
-      { enemyId: 'MON_SWIFT_EEL', count: 6, intervalTicks: 12 },
-      { enemyId: 'MON_SHELL_CRAB', count: 2, intervalTicks: 20 },
+      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 12 },
+      { enemyId: 'MON_SWIFT_EEL', count: 10, intervalTicks: 12 },
+      { enemyId: 'MON_SHELL_CRAB', count: 4, intervalTicks: 18 },
     ],
   },
   {
     id: 'WAVE_N01_05',
     index: 5,
-    hpMultiplierBp: 25_000,
+    hpMultiplierBp: 18_000,
     expMultiplierBp: 6_000,
-    speedMultiplierBp: 15_000,
+    speedMultiplierBp: 13_000,
     groups: [
-      { enemyId: 'MON_SHELL_CRAB', count: 2, intervalTicks: 18 },
-      { enemyId: 'MON_SWIFT_EEL', count: 10, intervalTicks: 11 },
-      { enemyId: 'MON_TIDE_IMP', count: 8, intervalTicks: 12 },
-      { enemyId: 'MON_SHELL_CRAB', count: 2, intervalTicks: 17 },
+      { enemyId: 'MON_DRAGON_TORTOISE', count: 1, intervalTicks: 1 },
+      { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 17 },
+      { enemyId: 'MON_SWIFT_EEL', count: 8, intervalTicks: 12 },
+      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 12 },
     ],
   },
 ];
@@ -736,69 +744,72 @@ const stage02RoutePoints: Point[] = [
   { x: 620, y: 1150 },
 ];
 
-const stage02TowerAnchors: [Point, Point, Point] = [
+const stage02TowerAnchors: Point[] = [
   { x: 1100, y: 245 },
   { x: 1160, y: 540 },
   { x: 1050, y: 880 },
+  { x: 576, y: 800 },
 ];
 
 const stage02Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N02_01',
     index: 1,
-    hpMultiplierBp: 8_000,
-    expMultiplierBp: 7_000,
+    hpMultiplierBp: 7_000,
+    expMultiplierBp: 7_400,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 14 },
-      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 12 },
+      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 14 },
+      { enemyId: 'MON_SWIFT_EEL', count: 8, intervalTicks: 12 },
     ],
   },
   {
     id: 'WAVE_N02_02',
     index: 2,
-    hpMultiplierBp: 14_000,
-    expMultiplierBp: 7_000,
+    hpMultiplierBp: 11_000,
+    expMultiplierBp: 7_200,
     groups: [
-      { enemyId: 'MON_SHELL_CRAB', count: 4, intervalTicks: 17 },
+      { enemyId: 'MON_SHELL_CRAB', count: 2, intervalTicks: 17 },
       { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 13 },
-      { enemyId: 'MON_SWIFT_EEL', count: 6, intervalTicks: 11 },
+      { enemyId: 'MON_SWIFT_EEL', count: 10, intervalTicks: 11 },
     ],
   },
   {
     id: 'WAVE_N02_03',
     index: 3,
-    hpMultiplierBp: 20_000,
-    expMultiplierBp: 6_800,
+    hpMultiplierBp: 19_000,
+    expMultiplierBp: 7_000,
     groups: [
-      { enemyId: 'MON_SWIFT_EEL', count: 10, intervalTicks: 10 },
-      { enemyId: 'MON_TIDE_IMP', count: 8, intervalTicks: 12 },
+      { enemyId: 'MON_REEF_GUARD', count: 2, intervalTicks: 17 },
       { enemyId: 'MON_SHELL_CRAB', count: 5, intervalTicks: 16 },
+      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 12 },
+      { enemyId: 'MON_SWIFT_EEL', count: 9, intervalTicks: 10 },
     ],
   },
   {
     id: 'WAVE_N02_04',
     index: 4,
-    hpMultiplierBp: 38_000,
-    expMultiplierBp: 6_500,
+    hpMultiplierBp: 32_000,
+    expMultiplierBp: 6_800,
     speedMultiplierBp: 12_000,
     groups: [
-      { enemyId: 'MON_REEF_GUARD', count: 2, intervalTicks: 17 },
-      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 12 },
-      { enemyId: 'MON_SWIFT_EEL', count: 8, intervalTicks: 10 },
-      { enemyId: 'MON_SHELL_CRAB', count: 7, intervalTicks: 15 },
+      { enemyId: 'MON_TIDE_IMP', count: 11, intervalTicks: 11 },
+      { enemyId: 'MON_SWIFT_EEL', count: 9, intervalTicks: 9 },
+      { enemyId: 'MON_SHELL_CRAB', count: 7, intervalTicks: 14 },
+      { enemyId: 'MON_REEF_GUARD', count: 3, intervalTicks: 16 },
     ],
   },
   {
     id: 'WAVE_N02_05',
     index: 5,
     hpMultiplierBp: 42_000,
-    expMultiplierBp: 6_500,
-    speedMultiplierBp: 13_000,
+    expMultiplierBp: 6_600,
+    speedMultiplierBp: 14_500,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 11 },
-      { enemyId: 'MON_SHELL_CRAB', count: 8, intervalTicks: 14 },
-      { enemyId: 'MON_REEF_GUARD', count: 3, intervalTicks: 16 },
+      { enemyId: 'MON_DRAGON_TORTOISE', count: 1, intervalTicks: 1 },
+      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 10 },
       { enemyId: 'MON_SWIFT_EEL', count: 12, intervalTicks: 9 },
+      { enemyId: 'MON_SHELL_CRAB', count: 8, intervalTicks: 14 },
+      { enemyId: 'MON_REEF_GUARD', count: 3, intervalTicks: 15 },
     ],
   },
 ];
@@ -815,279 +826,287 @@ const stage03RoutePoints: Point[] = [
   { x: 1230, y: 930 },
 ];
 
-const stage03TowerAnchors: [Point, Point, Point] = [
+const stage03TowerAnchors: Point[] = [
   { x: 1060, y: 190 },
   { x: 510, y: 470 },
   { x: 1390, y: 660 },
+  { x: 832, y: 1056 },
 ];
 
 const stage03Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N03_01',
     index: 1,
-    hpMultiplierBp: 7_000,
-    expMultiplierBp: 7_600,
+    hpMultiplierBp: 6_500,
+    expMultiplierBp: 7_900,
     speedMultiplierBp: 10_000,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 12 },
-      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 10 },
-      { enemyId: 'MON_SHELL_CRAB', count: 4, intervalTicks: 16 },
+      { enemyId: 'MON_TIDE_IMP', count: 12, intervalTicks: 12 },
+      { enemyId: 'MON_SWIFT_EEL', count: 8, intervalTicks: 10 },
     ],
   },
   {
     id: 'WAVE_N03_02',
     index: 2,
-    hpMultiplierBp: 15_000,
-    expMultiplierBp: 7_505,
-    speedMultiplierBp: 10_700,
+    hpMultiplierBp: 13_000,
+    expMultiplierBp: 7_700,
+    speedMultiplierBp: 10_500,
     groups: [
-      { enemyId: 'MON_REEF_GUARD', count: 3, intervalTicks: 17 },
-      { enemyId: 'MON_SHELL_CRAB', count: 5, intervalTicks: 15 },
-      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 11 },
-      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 9 },
+      { enemyId: 'MON_REEF_GUARD', count: 2, intervalTicks: 17 },
+      { enemyId: 'MON_SHELL_CRAB', count: 4, intervalTicks: 15 },
+      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 11 },
+      { enemyId: 'MON_SWIFT_EEL', count: 9, intervalTicks: 9 },
     ],
   },
   {
     id: 'WAVE_N03_03',
     index: 3,
-    hpMultiplierBp: 30_000,
-    expMultiplierBp: 7_410,
+    hpMultiplierBp: 25_000,
+    expMultiplierBp: 7_500,
     speedMultiplierBp: 11_400,
     groups: [
-      { enemyId: 'MON_REEF_GUARD', count: 5, intervalTicks: 15 },
-      { enemyId: 'MON_SHELL_CRAB_S03_LATE', count: 5, intervalTicks: 14 },
-      { enemyId: 'MON_SWIFT_EEL_S03_LATE', count: 9, intervalTicks: 8 },
-      { enemyId: 'MON_TIDE_IMP_S03_LATE', count: 8, intervalTicks: 10 },
+      { enemyId: 'MON_REEF_GUARD', count: 4, intervalTicks: 15 },
+      { enemyId: 'MON_SHELL_CRAB_S03_LATE', count: 4, intervalTicks: 14 },
+      { enemyId: 'MON_SWIFT_EEL_S03_LATE', count: 10, intervalTicks: 8 },
+      { enemyId: 'MON_TIDE_IMP_S03_LATE', count: 10, intervalTicks: 10 },
     ],
   },
   {
     id: 'WAVE_N03_04',
     index: 4,
-    hpMultiplierBp: 46_350,
-    expMultiplierBp: 7_220,
-    speedMultiplierBp: 12_688,
+    hpMultiplierBp: 40_000,
+    expMultiplierBp: 7_300,
+    speedMultiplierBp: 12_800,
     groups: [
       { enemyId: 'MON_REEF_GUARD', count: 6, intervalTicks: 14 },
       { enemyId: 'MON_SHELL_CRAB_S03_LATE', count: 6, intervalTicks: 13 },
-      { enemyId: 'MON_SWIFT_EEL_S03_LATE', count: 10, intervalTicks: 8 },
-      { enemyId: 'MON_TIDE_IMP_S03_LATE', count: 8, intervalTicks: 9 },
+      { enemyId: 'MON_SWIFT_EEL_S03_LATE', count: 11, intervalTicks: 8 },
+      { enemyId: 'MON_TIDE_IMP_S03_LATE', count: 9, intervalTicks: 9 },
     ],
   },
   {
     id: 'WAVE_N03_05',
     index: 5,
-    hpMultiplierBp: 68_250,
-    expMultiplierBp: 7_220,
-    speedMultiplierBp: 14_040,
+    hpMultiplierBp: 59_800,
+    expMultiplierBp: 7_200,
+    speedMultiplierBp: 14_200,
     groups: [
       { enemyId: 'MON_DRAGON_TORTOISE', count: 1, intervalTicks: 1 },
       { enemyId: 'MON_REEF_GUARD', count: 6, intervalTicks: 13 },
+      { enemyId: 'MON_SHELL_CRAB_S03_LATE', count: 7, intervalTicks: 12 },
       { enemyId: 'MON_SWIFT_EEL_S03_LATE', count: 12, intervalTicks: 7 },
-      { enemyId: 'MON_TIDE_IMP_S03_LATE', count: 8, intervalTicks: 9 },
-      { enemyId: 'MON_SHELL_CRAB_S03_LATE', count: 8, intervalTicks: 12 },
+      { enemyId: 'MON_TIDE_IMP_S03_LATE', count: 10, intervalTicks: 9 },
     ],
   },
 ];
 
 const stage04RoutePoints: Point[] = [
   { x: 1320, y: -70 },
-  { x: 1320, y: 140 },
-  { x: 1430, y: 300 },
-  { x: 1350, y: 500 },
-  { x: 1120, y: 690 },
-  { x: 800, y: 720 },
-  { x: 600, y: 760 },
-  { x: 820, y: 850 },
-  { x: 980, y: 1120 },
+  { x: 1370, y: 100 },
+  { x: 1430, y: 260 },
+  { x: 1350, y: 420 },
+  { x: 1190, y: 520 },
+  { x: 960, y: 570 },
+  { x: 740, y: 560 },
+  { x: 620, y: 690 },
+  { x: 740, y: 810 },
+  { x: 950, y: 840 },
+  { x: 1110, y: 960 },
+  { x: 980, y: 1140 },
 ];
 
-const stage04TowerAnchors: [Point, Point, Point] = [
+const stage04TowerAnchors: Point[] = [
   { x: 600, y: 260 },
   { x: 1710, y: 450 },
   { x: 1300, y: 800 },
+  { x: 1152, y: 160 },
 ];
 
 const stage04Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N04_01',
     index: 1,
-    hpMultiplierBp: 7_000,
-    expMultiplierBp: 5_625,
-    speedMultiplierBp: 10_000,
+    hpMultiplierBp: 6_500,
+    expMultiplierBp: 6_200,
+    speedMultiplierBp: 10_500,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 8, intervalTicks: 10 },
-      { enemyId: 'MON_SWIFT_EEL', count: 6, intervalTicks: 9 },
-      { enemyId: 'MON_SHELL_CRAB', count: 4, intervalTicks: 14 },
-      { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 3, intervalTicks: 15 },
+      { enemyId: 'MON_TIDE_IMP', count: 12, intervalTicks: 10 },
+      { enemyId: 'MON_SWIFT_EEL', count: 10, intervalTicks: 9 },
     ],
   },
   {
     id: 'WAVE_N04_02',
     index: 2,
-    hpMultiplierBp: 17_000,
-    expMultiplierBp: 5_313,
-    speedMultiplierBp: 10_500,
+    hpMultiplierBp: 13_000,
+    expMultiplierBp: 6_000,
+    speedMultiplierBp: 11_000,
     groups: [
-      { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 5, intervalTicks: 14 },
-      { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 13 },
-      { enemyId: 'MON_TIDE_IMP', count: 8, intervalTicks: 9 },
-      { enemyId: 'MON_SWIFT_EEL', count: 6, intervalTicks: 8 },
+      { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 2, intervalTicks: 15 },
+      { enemyId: 'MON_SHELL_CRAB', count: 4, intervalTicks: 13 },
+      { enemyId: 'MON_TIDE_IMP', count: 12, intervalTicks: 9 },
+      { enemyId: 'MON_SWIFT_EEL', count: 10, intervalTicks: 8 },
     ],
   },
   {
     id: 'WAVE_N04_03',
     index: 3,
-    hpMultiplierBp: 26_000,
-    expMultiplierBp: 5_125,
-    speedMultiplierBp: 11_000,
+    hpMultiplierBp: 20_000,
+    expMultiplierBp: 5_800,
+    speedMultiplierBp: 11_500,
     groups: [
-      { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 7, intervalTicks: 13 },
-      { enemyId: 'MON_REEF_GUARD', count: 6, intervalTicks: 14 },
-      { enemyId: 'MON_SWIFT_EEL_S04_LATE', count: 9, intervalTicks: 7 },
-      { enemyId: 'MON_TIDE_IMP_S04_LATE', count: 8, intervalTicks: 9 },
+      { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 4, intervalTicks: 13 },
+      { enemyId: 'MON_REEF_GUARD', count: 4, intervalTicks: 14 },
+      { enemyId: 'MON_SWIFT_EEL_S04_LATE', count: 12, intervalTicks: 7 },
+      { enemyId: 'MON_TIDE_IMP_S04_LATE', count: 12, intervalTicks: 9 },
     ],
   },
   {
     id: 'WAVE_N04_04',
     index: 4,
-    hpMultiplierBp: 36_000,
-    expMultiplierBp: 5_000,
-    speedMultiplierBp: 12_064,
+    hpMultiplierBp: 30_000,
+    expMultiplierBp: 5_600,
+    speedMultiplierBp: 12_000,
     groups: [
       { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 8, intervalTicks: 12 },
       { enemyId: 'MON_SHELL_CRAB_S04_LATE', count: 7, intervalTicks: 12 },
       { enemyId: 'MON_REEF_GUARD', count: 6, intervalTicks: 13 },
-      { enemyId: 'MON_SWIFT_EEL_S04_LATE', count: 8, intervalTicks: 7 },
-      { enemyId: 'MON_TIDE_IMP_S04_LATE', count: 5, intervalTicks: 8 },
+      { enemyId: 'MON_SWIFT_EEL_S04_LATE', count: 10, intervalTicks: 7 },
+      { enemyId: 'MON_TIDE_IMP_S04_LATE', count: 7, intervalTicks: 8 },
     ],
   },
   {
     id: 'WAVE_N04_05',
     index: 5,
-    hpMultiplierBp: 51_500,
-    expMultiplierBp: 5_000,
-    speedMultiplierBp: 13_176,
+    hpMultiplierBp: 60_000,
+    expMultiplierBp: 5_500,
+    speedMultiplierBp: 12_500,
     groups: [
       { enemyId: 'MON_ABYSS_WYRM', count: 1, intervalTicks: 1 },
-      { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 6, intervalTicks: 11 },
-      { enemyId: 'MON_REEF_GUARD', count: 7, intervalTicks: 12 },
-      { enemyId: 'MON_SWIFT_EEL_S04_LATE', count: 12, intervalTicks: 6 },
-      { enemyId: 'MON_TIDE_IMP_S04_LATE', count: 7, intervalTicks: 8 },
-      { enemyId: 'MON_SHELL_CRAB_S04_LATE', count: 7, intervalTicks: 11 },
+      { enemyId: 'MON_ABYSS_SCALE_GUARD', count: 5, intervalTicks: 11 },
+      { enemyId: 'MON_REEF_GUARD', count: 5, intervalTicks: 12 },
+      { enemyId: 'MON_SHELL_CRAB_S04_LATE', count: 6, intervalTicks: 11 },
+      { enemyId: 'MON_SWIFT_EEL_S04_LATE', count: 15, intervalTicks: 6 },
+      { enemyId: 'MON_TIDE_IMP_S04_LATE', count: 13, intervalTicks: 8 },
     ],
   },
 ];
 
 const stage05RoutePoints: Point[] = [
-  { x: 960, y: -70 },
-  { x: 960, y: 160 },
-  { x: 1120, y: 230 },
-  { x: 1170, y: 400 },
-  { x: 1190, y: 560 },
-  { x: 1050, y: 670 },
-  { x: 830, y: 720 },
-  { x: 690, y: 770 },
-  { x: 770, y: 850 },
-  { x: 930, y: 1120 },
+  { x: 1120, y: -70 },
+  { x: 1170, y: 70 },
+  { x: 1210, y: 210 },
+  { x: 1160, y: 340 },
+  { x: 1000, y: 410 },
+  { x: 810, y: 400 },
+  { x: 650, y: 480 },
+  { x: 550, y: 620 },
+  { x: 620, y: 750 },
+  { x: 800, y: 820 },
+  { x: 1020, y: 800 },
+  { x: 1190, y: 860 },
+  { x: 1250, y: 980 },
+  { x: 1090, y: 1130 },
 ];
 
-const stage05TowerAnchors: [Point, Point, Point] = [
+const stage05TowerAnchors: Point[] = [
   { x: 570, y: 355 },
   { x: 1382, y: 354 },
   { x: 463, y: 620 },
+  { x: 1152, y: 608 },
 ];
 
 const stage05Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N05_01',
     index: 1,
-    hpMultiplierBp: 8_500,
-    expMultiplierBp: 9_000,
-    speedMultiplierBp: 10_000,
+    hpMultiplierBp: 7_000,
+    expMultiplierBp: 9_200,
+    speedMultiplierBp: 12_000,
     groups: [
-      { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 2, intervalTicks: 14 },
-      { enemyId: 'MON_SHELL_CRAB', count: 5, intervalTicks: 13 },
-      { enemyId: 'MON_TIDE_IMP', count: 8, intervalTicks: 9 },
-      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 8 },
+      { enemyId: 'MON_TIDE_IMP', count: 13, intervalTicks: 9 },
+      { enemyId: 'MON_SWIFT_EEL', count: 11, intervalTicks: 8 },
     ],
   },
   {
     id: 'WAVE_N05_02',
     index: 2,
-    hpMultiplierBp: 19_000,
-    expMultiplierBp: 8_500,
-    speedMultiplierBp: 10_400,
+    hpMultiplierBp: 14_000,
+    expMultiplierBp: 8_900,
+    speedMultiplierBp: 12_800,
     groups: [
-      { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 3, intervalTicks: 13 },
-      { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 12 },
-      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 8 },
-      { enemyId: 'MON_SWIFT_EEL', count: 8, intervalTicks: 7 },
+      { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 2, intervalTicks: 14 },
+      { enemyId: 'MON_SHELL_CRAB', count: 4, intervalTicks: 12 },
+      { enemyId: 'MON_TIDE_IMP', count: 13, intervalTicks: 8 },
+      { enemyId: 'MON_SWIFT_EEL', count: 11, intervalTicks: 7 },
     ],
   },
   {
     id: 'WAVE_N05_03',
     index: 3,
-    hpMultiplierBp: 30_000,
-    expMultiplierBp: 8_000,
-    speedMultiplierBp: 10_800,
+    hpMultiplierBp: 26_000,
+    expMultiplierBp: 8_500,
+    speedMultiplierBp: 13_600,
     groups: [
       { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 3, intervalTicks: 12 },
-      { enemyId: 'MON_REEF_GUARD', count: 6, intervalTicks: 13 },
-      { enemyId: 'MON_SHELL_CRAB_S05_LATE', count: 4, intervalTicks: 11 },
-      { enemyId: 'MON_SWIFT_EEL_S05_LATE', count: 10, intervalTicks: 7 },
-      { enemyId: 'MON_TIDE_IMP_S05_LATE', count: 8, intervalTicks: 8 },
+      { enemyId: 'MON_REEF_GUARD', count: 5, intervalTicks: 13 },
+      { enemyId: 'MON_SHELL_CRAB_S05_LATE', count: 5, intervalTicks: 11 },
+      { enemyId: 'MON_SWIFT_EEL_S05_LATE', count: 12, intervalTicks: 7 },
+      { enemyId: 'MON_TIDE_IMP_S05_LATE', count: 11, intervalTicks: 8 },
     ],
   },
   {
     id: 'WAVE_N05_04',
     index: 4,
-    hpMultiplierBp: 44_000,
-    expMultiplierBp: 7_800,
-    speedMultiplierBp: 11_424,
+    hpMultiplierBp: 40_000,
+    expMultiplierBp: 8_100,
+    speedMultiplierBp: 14_500,
     groups: [
-      { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 4, intervalTicks: 11 },
-      { enemyId: 'MON_REEF_GUARD', count: 7, intervalTicks: 12 },
-      { enemyId: 'MON_SHELL_CRAB_S05_LATE', count: 8, intervalTicks: 10 },
-      { enemyId: 'MON_SWIFT_EEL_S05_LATE', count: 10, intervalTicks: 6 },
-      { enemyId: 'MON_TIDE_IMP_S05_LATE', count: 7, intervalTicks: 8 },
+      { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 5, intervalTicks: 11 },
+      { enemyId: 'MON_REEF_GUARD', count: 8, intervalTicks: 12 },
+      { enemyId: 'MON_SHELL_CRAB_S05_LATE', count: 9, intervalTicks: 10 },
+      { enemyId: 'MON_SWIFT_EEL_S05_LATE', count: 12, intervalTicks: 6 },
+      { enemyId: 'MON_TIDE_IMP_S05_LATE', count: 10, intervalTicks: 8 },
     ],
   },
   {
     id: 'WAVE_N05_05',
     index: 5,
-    hpMultiplierBp: 50_000,
-    expMultiplierBp: 7_800,
-    speedMultiplierBp: 11_600,
+    hpMultiplierBp: 59_000,
+    expMultiplierBp: 7_900,
+    speedMultiplierBp: 16_500,
     groups: [
       { enemyId: 'MON_ECLIPSE_KUN_EMPEROR', count: 1, intervalTicks: 1 },
-      { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 4, intervalTicks: 10 },
-      { enemyId: 'MON_REEF_GUARD', count: 8, intervalTicks: 11 },
-      { enemyId: 'MON_SWIFT_EEL_S05_LATE', count: 12, intervalTicks: 6 },
-      { enemyId: 'MON_SHELL_CRAB_S05_LATE', count: 8, intervalTicks: 9 },
-      { enemyId: 'MON_TIDE_IMP_S05_LATE', count: 6, intervalTicks: 7 },
-      { enemyId: 'MON_REEF_GUARD', count: 3, intervalTicks: 8 },
+      { enemyId: 'MON_SOLAR_FORMATION_PRIEST', count: 2, intervalTicks: 10 },
+      { enemyId: 'MON_REEF_GUARD', count: 6, intervalTicks: 11 },
+      { enemyId: 'MON_SHELL_CRAB_S05_LATE', count: 6, intervalTicks: 9 },
+      { enemyId: 'MON_SWIFT_EEL_S05_LATE', count: 18, intervalTicks: 6 },
+      { enemyId: 'MON_TIDE_IMP_S05_LATE', count: 17, intervalTicks: 7 },
     ],
   },
 ];
 
 const stage06RoutePoints: Point[] = [
-  { x: 960, y: -70 },
-  { x: 960, y: 150 },
-  { x: 1100, y: 220 },
-  { x: 1162, y: 381 },
-  { x: 1210, y: 520 },
-  { x: 1280, y: 650 },
-  { x: 1450, y: 720 },
-  { x: 1360, y: 800 },
-  { x: 1250, y: 850 },
-  { x: 1270, y: 930 },
-  { x: 980, y: 1120 },
+  { x: 760, y: -70 },
+  { x: 690, y: 70 },
+  { x: 650, y: 220 },
+  { x: 720, y: 350 },
+  { x: 900, y: 410 },
+  { x: 1120, y: 390 },
+  { x: 1330, y: 450 },
+  { x: 1450, y: 580 },
+  { x: 1400, y: 720 },
+  { x: 1240, y: 800 },
+  { x: 1040, y: 780 },
+  { x: 830, y: 830 },
+  { x: 700, y: 960 },
+  { x: 830, y: 1130 },
 ];
 
-const stage06TowerAnchors: [Point, Point, Point] = [
+const stage06TowerAnchors: Point[] = [
   { x: 650, y: 292 },
   { x: 1348, y: 292 },
   { x: 978, y: 805 },
+  { x: 1472, y: 928 },
 ];
 
 const stage06Waves: WaveDefinition[] = [
@@ -1095,164 +1114,162 @@ const stage06Waves: WaveDefinition[] = [
     id: 'WAVE_N06_01',
     index: 1,
     hpMultiplierBp: 6_500,
-    expMultiplierBp: 5_625,
-    speedMultiplierBp: 10_000,
+    expMultiplierBp: 6_300,
+    speedMultiplierBp: 11_500,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 8, intervalTicks: 8 },
-      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 7 },
-      { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 12 },
-      { enemyId: 'MON_PHASE_SHELL_WEAVER', count: 2, intervalTicks: 13 },
+      { enemyId: 'MON_TIDE_IMP', count: 14, intervalTicks: 8 },
+      { enemyId: 'MON_SWIFT_EEL', count: 11, intervalTicks: 7 },
     ],
   },
   {
     id: 'WAVE_N06_02',
     index: 2,
-    hpMultiplierBp: 15_000,
-    expMultiplierBp: 5_125,
-    speedMultiplierBp: 10_000,
+    hpMultiplierBp: 11_500,
+    expMultiplierBp: 6_000,
+    speedMultiplierBp: 12_000,
     groups: [
-      { enemyId: 'MON_PHASE_SHELL_WEAVER', count: 4, intervalTicks: 12 },
-      { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 11 },
-      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 8 },
-      { enemyId: 'MON_SWIFT_EEL', count: 8, intervalTicks: 7 },
+      { enemyId: 'MON_PHASE_SHELL_WEAVER', count: 2, intervalTicks: 13 },
+      { enemyId: 'MON_SHELL_CRAB', count: 5, intervalTicks: 11 },
+      { enemyId: 'MON_TIDE_IMP', count: 14, intervalTicks: 8 },
+      { enemyId: 'MON_SWIFT_EEL', count: 11, intervalTicks: 7 },
     ],
   },
   {
     id: 'WAVE_N06_03',
     index: 3,
-    hpMultiplierBp: 27_000,
-    expMultiplierBp: 4_875,
-    speedMultiplierBp: 11_000,
+    hpMultiplierBp: 25_000,
+    expMultiplierBp: 5_700,
+    speedMultiplierBp: 13_200,
     groups: [
-      { enemyId: 'MON_PHASE_SHELL_WEAVER_S06_LATE', count: 6, intervalTicks: 11 },
+      { enemyId: 'MON_PHASE_SHELL_WEAVER_S06_LATE', count: 5, intervalTicks: 11 },
       { enemyId: 'MON_REEF_GUARD_S06_LATE', count: 6, intervalTicks: 12 },
-      { enemyId: 'MON_SHELL_CRAB_S06_LATE', count: 3, intervalTicks: 10 },
-      { enemyId: 'MON_SWIFT_EEL_S06_LATE', count: 10, intervalTicks: 6 },
-      { enemyId: 'MON_TIDE_IMP_S06_LATE', count: 8, intervalTicks: 8 },
+      { enemyId: 'MON_SHELL_CRAB_S06_LATE', count: 5, intervalTicks: 10 },
+      { enemyId: 'MON_SWIFT_EEL_S06_LATE', count: 13, intervalTicks: 6 },
+      { enemyId: 'MON_TIDE_IMP_S06_LATE', count: 11, intervalTicks: 8 },
     ],
   },
   {
     id: 'WAVE_N06_04',
     index: 4,
-    hpMultiplierBp: 36_000,
-    expMultiplierBp: 4_625,
-    speedMultiplierBp: 11_500,
+    hpMultiplierBp: 40_000,
+    expMultiplierBp: 5_400,
+    speedMultiplierBp: 14_000,
     groups: [
-      { enemyId: 'MON_PHASE_SHELL_WEAVER_S06_LATE', count: 8, intervalTicks: 10 },
-      { enemyId: 'MON_SHELL_CRAB_S06_LATE', count: 7, intervalTicks: 9 },
+      { enemyId: 'MON_PHASE_SHELL_WEAVER_S06_LATE', count: 7, intervalTicks: 10 },
+      { enemyId: 'MON_SHELL_CRAB_S06_LATE', count: 8, intervalTicks: 9 },
       { enemyId: 'MON_REEF_GUARD_S06_LATE', count: 7, intervalTicks: 11 },
-      { enemyId: 'MON_SWIFT_EEL_S06_LATE', count: 10, intervalTicks: 6 },
-      { enemyId: 'MON_TIDE_IMP_S06_LATE', count: 7, intervalTicks: 7 },
+      { enemyId: 'MON_SWIFT_EEL_S06_LATE', count: 12, intervalTicks: 6 },
+      { enemyId: 'MON_TIDE_IMP_S06_LATE', count: 10, intervalTicks: 7 },
     ],
   },
   {
     id: 'WAVE_N06_05',
     index: 5,
-    hpMultiplierBp: 58_000,
-    expMultiplierBp: 4_625,
-    speedMultiplierBp: 12_000,
+    hpMultiplierBp: 76_000,
+    expMultiplierBp: 5_200,
+    speedMultiplierBp: 17_000,
     groups: [
       { enemyId: 'MON_MIRAGE_MOTHER', count: 1, intervalTicks: 1 },
-      { enemyId: 'MON_PHASE_SHELL_WEAVER_S06_LATE', count: 8, intervalTicks: 9 },
+      { enemyId: 'MON_PHASE_SHELL_WEAVER_S06_LATE', count: 4, intervalTicks: 9 },
       { enemyId: 'MON_REEF_GUARD_S06_LATE', count: 8, intervalTicks: 10 },
-      { enemyId: 'MON_SWIFT_EEL_S06_LATE', count: 12, intervalTicks: 5 },
       { enemyId: 'MON_SHELL_CRAB_S06_LATE', count: 8, intervalTicks: 8 },
-      { enemyId: 'MON_TIDE_IMP_S06_LATE', count: 8, intervalTicks: 7 },
+      { enemyId: 'MON_SWIFT_EEL_S06_LATE', count: 17, intervalTicks: 5 },
+      { enemyId: 'MON_TIDE_IMP_S06_LATE', count: 16, intervalTicks: 7 },
     ],
   },
 ];
 
 const stage07RoutePoints: Point[] = [
   { x: -70, y: 530 },
-  { x: 200, y: 530 },
-  { x: 440, y: 530 },
-  { x: 660, y: 500 },
-  { x: 820, y: 390 },
-  { x: 970, y: 350 },
-  { x: 1130, y: 410 },
-  { x: 1270, y: 500 },
-  { x: 1360, y: 620 },
-  { x: 1400, y: 740 },
-  { x: 1340, y: 820 },
-  { x: 1270, y: 880 },
-  { x: 1290, y: 940 },
-  { x: 1180, y: 1120 },
+  { x: 120, y: 510 },
+  { x: 310, y: 450 },
+  { x: 470, y: 340 },
+  { x: 650, y: 300 },
+  { x: 820, y: 360 },
+  { x: 900, y: 500 },
+  { x: 1060, y: 590 },
+  { x: 1280, y: 540 },
+  { x: 1430, y: 630 },
+  { x: 1480, y: 780 },
+  { x: 1400, y: 930 },
+  { x: 1240, y: 1020 },
+  { x: 1080, y: 1080 },
+  { x: 1180, y: 1140 },
 ];
 
-const stage07TowerAnchors: [Point, Point, Point] = [
+const stage07TowerAnchors: Point[] = [
   { x: 589, y: 287 },
   { x: 1406, y: 312 },
   { x: 1034, y: 808 },
+  { x: 320, y: 672 },
 ];
 
 const stage07Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N07_01',
     index: 1,
-    hpMultiplierBp: 4_000,
-    expMultiplierBp: 9_000,
+    hpMultiplierBp: 5_500,
+    expMultiplierBp: 9_200,
     speedMultiplierBp: 10_000,
     groups: [
-      { enemyId: 'MON_TIDE_IMP', count: 9, intervalTicks: 8 },
-      { enemyId: 'MON_SWIFT_EEL', count: 7, intervalTicks: 7 },
-      { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 11 },
-      { enemyId: 'MON_ETHEREAL_WALKER', count: 2, intervalTicks: 12 },
+      { enemyId: 'MON_TIDE_IMP', count: 14, intervalTicks: 8 },
+      { enemyId: 'MON_SWIFT_EEL', count: 12, intervalTicks: 7 },
     ],
   },
   {
     id: 'WAVE_N07_02',
     index: 2,
-    hpMultiplierBp: 18_000,
-    expMultiplierBp: 8_200,
+    hpMultiplierBp: 12_000,
+    expMultiplierBp: 8_800,
     speedMultiplierBp: 10_500,
     groups: [
-      { enemyId: 'MON_ETHEREAL_WALKER', count: 5, intervalTicks: 11 },
-      { enemyId: 'MON_SHELL_CRAB', count: 6, intervalTicks: 10 },
-      { enemyId: 'MON_TIDE_IMP', count: 10, intervalTicks: 7 },
-      { enemyId: 'MON_SWIFT_EEL', count: 8, intervalTicks: 6 },
+      { enemyId: 'MON_ETHEREAL_WALKER', count: 2, intervalTicks: 12 },
+      { enemyId: 'MON_SHELL_CRAB', count: 5, intervalTicks: 10 },
+      { enemyId: 'MON_TIDE_IMP', count: 14, intervalTicks: 7 },
+      { enemyId: 'MON_SWIFT_EEL', count: 13, intervalTicks: 6 },
     ],
   },
   {
     id: 'WAVE_N07_03',
     index: 3,
-    hpMultiplierBp: 35_000,
-    expMultiplierBp: 7_600,
-    speedMultiplierBp: 11_000,
+    hpMultiplierBp: 34_000,
+    expMultiplierBp: 8_200,
+    speedMultiplierBp: 11_500,
     groups: [
       { enemyId: 'MON_ETHEREAL_WALKER_S07_LATE', count: 7, intervalTicks: 10 },
-      { enemyId: 'MON_REEF_GUARD_S07_LATE', count: 7, intervalTicks: 11 },
-      { enemyId: 'MON_SHELL_CRAB_S07_LATE', count: 2, intervalTicks: 9 },
-      { enemyId: 'MON_SWIFT_EEL_S07_LATE', count: 11, intervalTicks: 6 },
-      { enemyId: 'MON_TIDE_IMP_S07_LATE', count: 8, intervalTicks: 7 },
+      { enemyId: 'MON_REEF_GUARD_S07_LATE', count: 6, intervalTicks: 11 },
+      { enemyId: 'MON_SHELL_CRAB_S07_LATE', count: 5, intervalTicks: 9 },
+      { enemyId: 'MON_SWIFT_EEL_S07_LATE', count: 13, intervalTicks: 6 },
+      { enemyId: 'MON_TIDE_IMP_S07_LATE', count: 11, intervalTicks: 7 },
     ],
   },
   {
     id: 'WAVE_N07_04',
     index: 4,
-    hpMultiplierBp: 49_000,
-    expMultiplierBp: 7_000,
-    speedMultiplierBp: 14_500,
+    hpMultiplierBp: 48_000,
+    expMultiplierBp: 7_700,
+    speedMultiplierBp: 15_000,
     groups: [
-      { enemyId: 'MON_ETHEREAL_WALKER_S07_LATE', count: 10, intervalTicks: 9 },
-      { enemyId: 'MON_SHELL_CRAB_S07_LATE', count: 8, intervalTicks: 8 },
-      { enemyId: 'MON_REEF_GUARD_S07_LATE', count: 8, intervalTicks: 10 },
-      { enemyId: 'MON_SWIFT_EEL_S07_LATE', count: 10, intervalTicks: 5 },
-      { enemyId: 'MON_TIDE_IMP_S07_LATE', count: 6, intervalTicks: 7 },
+      { enemyId: 'MON_ETHEREAL_WALKER_S07_LATE', count: 8, intervalTicks: 9 },
+      { enemyId: 'MON_SHELL_CRAB_S07_LATE', count: 9, intervalTicks: 8 },
+      { enemyId: 'MON_REEF_GUARD_S07_LATE', count: 7, intervalTicks: 10 },
+      { enemyId: 'MON_SWIFT_EEL_S07_LATE', count: 16, intervalTicks: 5 },
+      { enemyId: 'MON_TIDE_IMP_S07_LATE', count: 12, intervalTicks: 7 },
     ],
   },
   {
     id: 'WAVE_N07_05',
     index: 5,
-    hpMultiplierBp: 55_000,
-    expMultiplierBp: 7_000,
-    speedMultiplierBp: 18_000,
+    hpMultiplierBp: 109_500,
+    expMultiplierBp: 7_400,
+    speedMultiplierBp: 16_500,
     groups: [
       { enemyId: 'MON_DUAL_PHASE_BOOK_MOTH', count: 1, intervalTicks: 1 },
-      { enemyId: 'MON_ETHEREAL_WALKER_S07_LATE', count: 11, intervalTicks: 8 },
-      { enemyId: 'MON_REEF_GUARD_S07_LATE', count: 10, intervalTicks: 9 },
-      { enemyId: 'MON_SWIFT_EEL_S07_LATE', count: 13, intervalTicks: 5 },
-      { enemyId: 'MON_SHELL_CRAB_S07_LATE', count: 8, intervalTicks: 7 },
-      { enemyId: 'MON_TIDE_IMP_S07_LATE', count: 7, intervalTicks: 6 },
+      { enemyId: 'MON_ETHEREAL_WALKER_S07_LATE', count: 6, intervalTicks: 8 },
+      { enemyId: 'MON_REEF_GUARD_S07_LATE', count: 6, intervalTicks: 9 },
+      { enemyId: 'MON_SHELL_CRAB_S07_LATE', count: 7, intervalTicks: 7 },
+      { enemyId: 'MON_SWIFT_EEL_S07_LATE', count: 21, intervalTicks: 5 },
+      { enemyId: 'MON_TIDE_IMP_S07_LATE', count: 21, intervalTicks: 6 },
     ],
   },
 ];
@@ -1344,6 +1361,7 @@ const stage01SourceBundle: BattleBundleV1 = {
   route: {
     id: 'ROUTE_STAGE_01',
     points: stage01RoutePoints,
+    combatStartDistancePx: 420,
     towerAnchors: stage01TowerAnchors,
     breachPoint: stage01RoutePoints[stage01RoutePoints.length - 1] ?? { x: 680, y: 1140 },
   },
@@ -1372,7 +1390,7 @@ const stage01SourceBundle: BattleBundleV1 = {
     arrowCountCap: 6,
     penetrationCap: 4,
     volleyDamageFalloffBp: 1_000,
-    groupGapTicks: 18,
+    groupGapTicks: 10,
     waveGapTicks: 55,
     reviveGuardTicks: 60,
     reviveGroundRollbackBp: 1_000,
@@ -1527,7 +1545,7 @@ const stage04SourceBundle: BattleBundleV1 = {
     overdriveDurationTicks: 150,
     arrowCountCap: 6,
     penetrationCap: 4,
-    volleyDamageFalloffBp: 1_000,
+    volleyDamageFalloffBp: 1_750,
     groupGapTicks: 8,
     waveGapTicks: 36,
     reviveGuardTicks: 60,
@@ -1618,7 +1636,7 @@ const stage06SourceBundle: BattleBundleV1 = {
     basePenetration: 0,
     penetrationRetentionBp: 7_000,
     critChanceBp: 500,
-    critDamageBp: 15_000,
+    critDamageBp: 15_500,
   },
   enemies: stage06Enemies,
   waves: stage06Waves,

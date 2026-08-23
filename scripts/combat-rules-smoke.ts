@@ -27,6 +27,18 @@ function parsedCheckpoint(simulation: ReturnType<typeof createBattleSimulation>)
   return JSON.parse(new TextDecoder().decode(simulation.createCheckpoint()));
 }
 
+function startPreparedWave(simulation: ReturnType<typeof createBattleSimulation>): void {
+  const hud = simulation.getHudProjection();
+  assert.equal(hud.flowState, 'preparing', 'Fixed simulation must begin in preparation');
+  assert.ok(hud.preparationTicksRemaining > 0, 'Preparation countdown must be positive');
+  const output = simulation.applyCommand({
+    seq: hud.lastCommandSeq + 1,
+    type: 'START_WAVE',
+  });
+  assert.equal(output.commandAcks[0]?.status, 'applied', 'START_WAVE command');
+  assert.equal(simulation.getHudProjection().flowState, 'running', 'Wave must start explicitly');
+}
+
 function advanceUntil(
   simulation: ReturnType<typeof createBattleSimulation>,
   predicate: (output: SimulationOutput) => boolean,
@@ -43,7 +55,8 @@ function advanceUntil(
 }
 
 const schemaProbe = createBattleSimulation(createStage01Bundle(), 0x51a7e);
-assert.equal(parsedCheckpoint(schemaProbe).schemaVersion, 6, 'Current checkpoint schema');
+assert.equal(schemaProbe.getHudProjection().flowState, 'preparing', 'Initial fixed flow state');
+assert.equal(parsedCheckpoint(schemaProbe).schemaVersion, 7, 'Current checkpoint schema');
 
 const precisionBundle = createStage01Bundle();
 const precisionWave = precisionBundle.waves[0];
@@ -58,6 +71,9 @@ precisionBundle.tower.baseDamageMilli = 24_000;
 precisionBundle.tower.rangePx = 5_000;
 precisionBundle.tower.projectileSpeedPxPerSecond = 100_000;
 precisionBundle.tower.critChanceBp = 0;
+// This probe owns the precision/penetration mechanic only; the authored
+// no-fire ingress is covered by route geometry and must not delay this fixture.
+precisionBundle.route.combatStartDistancePx = 1;
 const precisionSeed = 0x9eec1510;
 const precisionSeedSimulation = createBattleSimulation(precisionBundle, precisionSeed);
 const precisionCheckpoint = parsedCheckpoint(precisionSeedSimulation);
@@ -67,6 +83,7 @@ const precisionSimulation = createBattleSimulation(
   precisionSeed,
   new TextEncoder().encode(JSON.stringify(precisionCheckpoint)),
 );
+startPreparedWave(precisionSimulation);
 precisionSimulation.advanceTicks(3);
 const precisionTarget = precisionSimulation.getRenderSnapshot().entities.find(
   (entity) => entity.renderKind === 'enemy',
@@ -79,7 +96,7 @@ const precisionTurns = Math.atan2(
 ) / (Math.PI * 2);
 const precisionAim = (Math.round(precisionTurns * 65_536) + 65_536) & 0xffff;
 assert.equal(precisionSimulation.applyCommand({
-  seq: 1,
+  seq: precisionSimulation.getHudProjection().lastCommandSeq + 1,
   type: 'SET_AIM',
   towerId: 1,
   angleU16: precisionAim,
@@ -131,8 +148,9 @@ const overdriveSimulation = createBattleSimulation(
   overdriveSeed,
   new TextEncoder().encode(JSON.stringify(readyCheckpoint)),
 );
+startPreparedWave(overdriveSimulation);
 const activation = overdriveSimulation.applyCommand({
-  seq: 1,
+  seq: overdriveSimulation.getHudProjection().lastCommandSeq + 1,
   type: 'ACTIVATE_OVERDRIVE',
   towerId: 1,
 });
@@ -146,7 +164,7 @@ assert.ok(
 assert.equal(overdriveSimulation.getHudProjection().overdrive.activeTowerId, 1);
 assert.equal(overdriveSimulation.getHudProjection().overdrive.charge, 0);
 const rejectedActivation = overdriveSimulation.applyCommand({
-  seq: 2,
+  seq: overdriveSimulation.getHudProjection().lastCommandSeq + 1,
   type: 'ACTIVATE_OVERDRIVE',
   towerId: 2,
 });
@@ -163,6 +181,7 @@ delete legacyGateBundle.rules.gateIntegrity;
 legacyGateBundle.rules.maxRevives = 0;
 legacyGateBundle.tower.rangePx = 1;
 const legacyGateSimulation = createBattleSimulation(legacyGateBundle, 0x1e6ac9);
+startPreparedWave(legacyGateSimulation);
 const legacyBreach = advanceUntil(
   legacyGateSimulation,
   (output) => output.events.some((event) => event.type === 'BREACH'),
@@ -177,6 +196,7 @@ gateBundle.tower.rangePx = 1;
 gateBundle.rules.gateIntegrity = 30;
 gateBundle.rules.maxRevives = 0;
 const gateSimulation = createBattleSimulation(gateBundle, 0x6a7e);
+startPreparedWave(gateSimulation);
 const firstBreachRun = advanceUntil(
   gateSimulation,
   (output) => output.events.some((event) => event.type === 'BREACH'),
@@ -207,6 +227,7 @@ reviveBundle.rules.gateIntegrity = 18;
 reviveBundle.rules.reviveGateRestoreBp = 5_000;
 reviveBundle.rules.maxRevives = 1;
 const reviveSimulation = createBattleSimulation(reviveBundle, 0x5e71fe);
+startPreparedWave(reviveSimulation);
 const reviveRequestRun = advanceUntil(
   reviveSimulation,
   (output) => output.flowRequests.some((request) => request.type === 'REVIVE'),
@@ -368,8 +389,8 @@ const battleBackgroundRenderer = new CanvasRenderer({
   drawBattleBackground(cameraOffset: { x: number; y: number }): void;
 }).drawBattleBackground({ x: 0, y: 0 });
 assert.ok(
-  battleBackgroundDraws.length > 1,
-  'The wide battle background must draw full-resolution reflected extensions.',
+  battleBackgroundDraws.length === 1,
+  'The battle background must be one continuous overscan image, never reflected tiles.',
 );
 assert.ok(
   battleBackgroundDraws.every((draw) => draw.alpha === 1),
@@ -404,25 +425,19 @@ function transformedDrawBounds(draw: BackgroundDrawRecord): {
     bottom: Math.max(...corners.map((corner) => corner.y)),
   };
 }
-const battleBackgroundBounds = battleBackgroundDraws.map(transformedDrawBounds);
-const backgroundBoundsKeys = new Set(battleBackgroundBounds.map((bounds) =>
-  [bounds.left, bounds.top, bounds.right, bounds.bottom].map(Math.round).join(',')));
-for (const expectedBounds of [
-  '0,0,480,45',
-  '0,45,480,855',
-  '0,855,480,1080',
-  '480,0,1920,45',
-  '480,45,1920,855',
-  '480,855,1920,1080',
-  '1920,0,2400,45',
-  '1920,45,2400,855',
-  '1920,855,2400,1080',
-]) {
-  assert.ok(
-    backgroundBoundsKeys.has(expectedBounds),
-    `The battle background must cover wide-screen region ${expectedBounds}.`,
-  );
-}
+const continuousBackgroundBounds = transformedDrawBounds(battleBackgroundDraws[0]!);
+assert.equal(
+  JSON.stringify(Object.fromEntries(
+    Object.entries(continuousBackgroundBounds).map(([key, value]) => [key, Math.round(value)]),
+  )),
+  JSON.stringify({ left: 0, top: 0, right: 2_400, bottom: 1_080 }),
+  'The single overscan background must cover the complete 20:9 battle viewport.',
+);
+assert.equal(
+  JSON.stringify(battleBackgroundDraws[0]!.args),
+  JSON.stringify([-640, -60, 3_200, 1_440]),
+  'The runtime must draw the authored 3200×1440 background once at its stable world rect.',
+);
 assert.equal(battleBackgroundMatrixStack.length, 0, 'Battle background save/restore must balance.');
 assert.equal(
   battleBackgroundOffscreenCanvasCount,
@@ -543,7 +558,213 @@ for (const expectedText of [
   );
 }
 
+renderedTexts.length = 0;
+const preparationRenderer = new CanvasRenderer(compactShopRuntime, shopRenderBundle);
+const preparationHud = shopRenderSimulation.getHudProjection();
+preparationRenderer.drawBattle({
+  snapshot: shopRenderSimulation.getRenderSnapshot(),
+  hud: preparationHud,
+  muted: false,
+  selectedTowerId: 0,
+  victory: false,
+});
+const preparationInteractions = (preparationRenderer as unknown as {
+  interactions: Array<{ id: string }>;
+}).interactions;
+assert.ok(
+  !renderedTexts.some((text) =>
+    text.includes('下一波侦察') || text.includes('立即迎敌')),
+  'Preparation must not render the removed wave forecast or manual-start copy.',
+);
+assert.ok(
+  !preparationInteractions.some(({ id }) => id === 'wave-start'),
+  'Preparation must expose no manual wave-start interaction.',
+);
+assert.ok(
+  renderedTexts.some((text) => text.includes('自动开波')) &&
+    renderedTexts.some((text) => text.includes('自由布阵')),
+  'Preparation must retain compact automatic-start and free-placement guidance.',
+);
+
+const spawnVisualSimulation = createBattleSimulation(createStage01Bundle(), 0x5a17_0001);
+startPreparedWave(spawnVisualSimulation);
+const spawnVisualOutput = spawnVisualSimulation.advanceTicks(1);
+const spawnVisualSnapshot = spawnVisualSimulation.getRenderSnapshot();
+const spawnedEntity = spawnVisualSnapshot.entities.find((entity) => entity.renderKind === 'enemy');
+assert.ok(spawnedEntity, 'Spawn visual probe did not create the first enemy.');
+const spawnPortalImage = { id: 'spawn-portal' };
+const spawnEnemyImage = { id: 'spawn-enemy' };
+const spawnTowerImage = { id: 'spawn-tower' };
+const foregroundEffectImage = { id: 'foreground-effect' };
+const spawnDraws: Array<{ image: unknown; args: number[] }> = [];
+const spawnLayerContext = new Proxy<Record<string, unknown>>({}, {
+  get(_target, property): unknown {
+    if (property === 'drawImage') {
+      return (image: unknown, ...args: number[]) => { spawnDraws.push({ image, args }); };
+    }
+    if (property === 'measureText') return (text: string) => ({ width: text.length * 10 });
+    if (property === 'createLinearGradient' || property === 'createRadialGradient') {
+      return () => gradient;
+    }
+    return () => undefined;
+  },
+  set(): boolean {
+    return true;
+  },
+});
+const spawnVisualRenderer = new CanvasRenderer({
+  ...compactShopRuntime,
+  context: spawnLayerContext,
+}, createStage01Bundle());
+(spawnVisualRenderer as unknown as {
+  images: { get(id: string): unknown };
+}).images = {
+  get: (id: string) => {
+    if (id === 'VFX_SPAWN_PORTAL') return spawnPortalImage;
+    if (id === 'VFX_NORMAL_HIT') return foregroundEffectImage;
+    if (id === spawnedEntity.assetId) return spawnEnemyImage;
+    if (id.startsWith('TOWER_')) return spawnTowerImage;
+    return undefined;
+  },
+};
+spawnVisualRenderer.pushEvents(spawnVisualOutput.events, spawnVisualSnapshot);
+const spawnPortal = (spawnVisualRenderer as unknown as {
+  effects: Array<{ assetId?: string; x: number; y: number }>;
+}).effects.find((effect) => effect.assetId === 'VFX_SPAWN_PORTAL');
+assert.ok(spawnPortal, 'Spawn visual probe did not create its portal effect.');
+assert.equal(
+  spawnPortal.x,
+  spawnedEntity.x,
+  'Spawn portal must remain attached to the authored route entry x coordinate.',
+);
+assert.equal(
+  spawnPortal.y,
+  spawnedEntity.y,
+  'Spawn portal must remain attached to the authored route entry instead of being clamped below the HUD.',
+);
+const spawnEffects = (spawnVisualRenderer as unknown as {
+  effects: Array<{
+    assetId?: string;
+    color: string;
+    duration: number;
+    kind: 'sprite';
+    size: number;
+    startedAt: number;
+    x: number;
+    y: number;
+  }>;
+}).effects;
+spawnEffects.push({
+  assetId: 'VFX_NORMAL_HIT',
+  color: '#fff',
+  duration: 360,
+  kind: 'sprite',
+  size: 96,
+  startedAt: Date.now(),
+  x: spawnedEntity.x,
+  y: spawnedEntity.y,
+});
+spawnEffects.push({
+  assetId: 'VFX_SPAWN_PORTAL',
+  color: '#fff',
+  duration: 1,
+  kind: 'sprite',
+  size: 116,
+  startedAt: Date.now() - 100,
+  x: -999,
+  y: -999,
+});
+spawnVisualRenderer.drawBattle({
+  snapshot: spawnVisualSnapshot,
+  hud: spawnVisualSimulation.getHudProjection(),
+  muted: false,
+  selectedTowerId: 0,
+  victory: false,
+});
+const portalDrawIndex = spawnDraws.findIndex(({ image }) => image === spawnPortalImage);
+const towerDrawIndex = spawnDraws.findIndex(({ image }) => image === spawnTowerImage);
+const enemyDrawIndex = spawnDraws.findIndex(({ image }) => image === spawnEnemyImage);
+const foregroundDrawIndex = spawnDraws.findIndex(({ image }) => image === foregroundEffectImage);
+assert.ok(portalDrawIndex >= 0, 'Spawn portal sprite must render when its asset is available.');
+assert.ok(towerDrawIndex >= 0, 'Spawn layering probe must render at least one tower.');
+assert.ok(enemyDrawIndex >= 0, 'Spawn layering probe must render its spawned enemy.');
+assert.ok(
+  portalDrawIndex < towerDrawIndex && portalDrawIndex < enemyDrawIndex,
+  'Spawn portal must be a ground layer drawn before both towers and enemies.',
+);
+assert.ok(
+  foregroundDrawIndex > enemyDrawIndex,
+  'Non-spawn combat effects must retain their foreground order after enemies.',
+);
+const portalDestination = spawnDraws[portalDrawIndex]!.args.slice(-4);
+const portalWidth = portalDestination[2] ?? 0;
+const portalHeight = portalDestination[3] ?? 0;
+assert.ok(
+  Math.abs(portalHeight / portalWidth - .4) < .001,
+  'Spawn portal must render as a ground ellipse with a 0.4 vertical scale.',
+);
+assert.ok(
+  (portalDestination[1] ?? 0) + portalHeight / 2 > 0,
+  'Spawn portal ellipse must sit below the enemy origin at ground level.',
+);
+assert.ok(
+  !(spawnVisualRenderer as unknown as { effects: Array<{ x: number }> }).effects
+    .some((effect) => effect.x === -999),
+  'Layered effect rendering must continue to expire stale effects.',
+);
+
+const buildReadyHud = {
+  ...preparationHud,
+  warPointsBalance: 99,
+  towerBuild: {
+    ...preparationHud.towerBuild,
+    nextTowerId: 2 as const,
+    cost: 40,
+    requiredCompletedWaves: 2,
+    completedWaves: 2,
+    unlocked: true,
+    affordable: true,
+    canBuild: true,
+  },
+};
+preparationRenderer.drawBattle({
+  snapshot: shopRenderSimulation.getRenderSnapshot(),
+  hud: buildReadyHud,
+  muted: false,
+  selectedTowerId: 0,
+  victory: false,
+});
+assert.ok(
+  (preparationRenderer as unknown as { interactions: Array<{ id: string }> }).interactions
+    .some(({ id }) => id === 'tower-build'),
+  'The compact preparation control must retain the new-tower deployment entry point.',
+);
+preparationRenderer.drawBattle({
+  snapshot: shopRenderSimulation.getRenderSnapshot(),
+  hud: buildReadyHud,
+  muted: false,
+  selectedTowerId: 0,
+  towerPlacement: { kind: 'build', towerId: 2 },
+  victory: false,
+});
+assert.ok(
+  (preparationRenderer as unknown as { interactions: Array<{ id: string }> }).interactions
+    .some(({ id }) => id === 'tower-build-cancel'),
+  'An active placement must retain an explicit compact cancel action.',
+);
+
 const breachRenderer = new CanvasRenderer(rendererRuntime, gateBundle);
+breachRenderer.drawBattle({
+  snapshot: firstBreachSnapshot,
+  hud: {
+    ...firstBreachHud,
+    activeTowerIds: [0, 1, 2, 3],
+    towerPositions: gateBundle.route.towerAnchors.map((point) => ({ ...point })),
+  },
+  muted: false,
+  selectedTowerId: 0,
+  victory: false,
+});
 const projectedThirdTower = projectBattleWorldPoint(gateBundle.route.towerAnchors[2]);
 assert.equal(
   breachRenderer.hitTestTower(projectedThirdTower),
@@ -554,6 +775,13 @@ assert.ok(
   !breachRenderer.isBattleHudPoint(projectedThirdTower),
   'The visible third tower must not sit inside a bottom HUD interaction zone.',
 );
+const projectedFourthTower = projectBattleWorldPoint(gateBundle.route.towerAnchors[3]);
+assert.equal(
+  breachRenderer.hitTestTower(projectedFourthTower),
+  3,
+  'The visible fourth tower must remain directly selectable after the world-camera projection.',
+);
+renderedTexts.length = 0;
 breachRenderer.pushEvents(firstBreachRun.output.events, firstBreachSnapshot);
 breachRenderer.drawBattle({
   snapshot: firstBreachSnapshot,

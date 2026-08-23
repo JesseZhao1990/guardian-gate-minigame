@@ -327,38 +327,38 @@ assert.equal(migratedPity.snapshot().offersSincePurple, completedSnapshot.offers
 const stageCases = [
   {
     bundle: createStage01Bundle(),
-    releaseId: 'GG_S01_ALPHA_V2',
-    hp: [6_000, 9_000, 11_650, 20_000, 25_000],
+    releaseId: 'GG_S01_ALPHA_V6',
+    hp: [5_500, 8_000, 11_000, 18_000, 18_000],
   },
   {
     bundle: createStage02Bundle(),
-    releaseId: 'GG_S02_ALPHA_V4',
-    hp: [8_000, 14_000, 20_000, 38_000, 42_000],
+    releaseId: 'GG_S02_ALPHA_V5',
+    hp: [7_000, 11_000, 19_000, 32_000, 42_000],
   },
   {
     bundle: createStage03Bundle(),
-    releaseId: 'GG_S03_ALPHA_V3',
-    hp: [7_000, 15_000, 30_000, 46_350, 68_250],
+    releaseId: 'GG_S03_ALPHA_V4',
+    hp: [6_500, 13_000, 25_000, 40_000, 59_800],
   },
   {
     bundle: createStage04Bundle(),
-    releaseId: 'GG_S04_ALPHA_V3',
-    hp: [7_000, 17_000, 26_000, 36_000, 51_500],
+    releaseId: 'GG_S04_ALPHA_V4',
+    hp: [6_500, 13_000, 20_000, 30_000, 60_000],
   },
   {
     bundle: createStage05Bundle(),
-    releaseId: 'GG_S05_ALPHA_V3',
-    hp: [8_500, 19_000, 30_000, 44_000, 50_000],
+    releaseId: 'GG_S05_ALPHA_V4',
+    hp: [7_000, 14_000, 26_000, 40_000, 59_000],
   },
   {
     bundle: createStage06Bundle(),
-    releaseId: 'GG_S06_ALPHA_V2',
-    hp: [6_500, 15_000, 27_000, 36_000, 58_000],
+    releaseId: 'GG_S06_ALPHA_V3',
+    hp: [6_500, 11_500, 25_000, 40_000, 76_000],
   },
   {
     bundle: createStage07Bundle(),
-    releaseId: 'GG_S07_ALPHA_V2',
-    hp: [4_000, 18_000, 35_000, 49_000, 55_000],
+    releaseId: 'GG_S07_ALPHA_V3',
+    hp: [5_500, 12_000, 34_000, 48_000, 109_500],
   },
 ] as const;
 

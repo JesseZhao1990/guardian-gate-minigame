@@ -12,6 +12,7 @@ import {
   PROJECTILE_FLAG_PENETRATION,
   PROJECTILE_FLAG_TOWER_ID_MASK,
   PROJECTILE_FLAG_TOWER_ID_SHIFT,
+  FIXED_WAVE_PREPARATION_TICKS,
   TICKS_PER_SECOND,
   type AuthorityEventV1,
   type BattleBundleV1,
@@ -43,8 +44,13 @@ import {
   legacyWarlessWaveDerivation,
   type LegacyWarlessWaveDerivationV1,
 } from './content-compat';
+import {
+  createDefaultTowerBuildZones,
+  validateTowerPlacement,
+} from './tower-placement';
 
-const CHECKPOINT_SCHEMA_VERSION = 6;
+const CHECKPOINT_SCHEMA_VERSION = 7;
+const LEGACY_POSITIONLESS_CHECKPOINT_SCHEMA_VERSION = 6;
 const LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION = 5;
 const LEGACY_GATELESS_CHECKPOINT_SCHEMA_VERSION = 4;
 const LEGACY_INDEPENDENT_AIM_CHECKPOINT_SCHEMA_VERSION = 3;
@@ -80,7 +86,13 @@ const MAX_MOVEMENT_SPEED_PX_PER_SECOND = Math.floor(
   (Number.MAX_SAFE_INTEGER - (TICKS_PER_SECOND - 1)) / MILLI_PX,
 );
 const ENDLESS_ENEMY_ID_SEQUENCE_RESERVE = 121;
-const PROJECTILE_ID_SEQUENCE_RESERVE = 3 * MAX_ARROW_COUNT;
+const FIXED_TOWER_COUNT = 4;
+const ENDLESS_TOWER_COUNT = 3;
+const FIXED_INITIAL_TOWER_IDS = [0, 1] as const satisfies readonly TowerId[];
+const ENDLESS_TOWER_IDS = [0, 1, 2] as const satisfies readonly TowerId[];
+const FIXED_THIRD_TOWER_UNLOCK_COMPLETED_WAVES = 2;
+const FIXED_FOURTH_TOWER_UNLOCK_COMPLETED_WAVES = 4;
+const PROJECTILE_ID_SEQUENCE_RESERVE = FIXED_TOWER_COUNT * MAX_ARROW_COUNT;
 const EVENT_SEQUENCE_PER_PROJECTILE_RESERVE = 5 * (MAX_PENETRATION_COUNT + 1);
 const EVENT_SEQUENCE_PER_TICK_LIFETIME_RESERVE = 1_024;
 const AUTHORITY_SEQUENCE_RESERVE = 1;
@@ -229,9 +241,11 @@ interface SerializableState {
   tick: number;
   speed: 1 | 2;
   flowState: BattleFlowState;
+  preparationTicksRemaining: number;
   outcome: BattleOutcome | null;
   aimAnglesU16: TowerAimAnglesU16;
   towerCooldowns: number[];
+  towerPositions: Point[];
   enemies: EnemyState[];
   projectiles: ProjectileState[];
   scheduler: SchedulerState;
@@ -247,7 +261,7 @@ interface SerializableState {
   shopOfferWaveIndex: number;
   shopPurchasedWaveIndex: number;
   shopPurchasesInWave: number;
-  shopReturnFlowState: 'running' | 'paused' | null;
+  shopReturnFlowState: 'preparing' | 'running' | 'paused' | null;
   waveBaseWarPoints: number;
   waveFocusedKills: number;
   waveFocusBonusAwarded: number;
@@ -269,8 +283,10 @@ interface SerializableState {
   wallTickRemainder: number;
 }
 
+type LegacySerializableStateV6 = Omit<SerializableState, 'towerPositions'>;
+
 type LegacySerializableStateV5 = Omit<
-  SerializableState,
+  LegacySerializableStateV6,
   | 'warPointsBalance'
   | 'warPointsEarned'
   | 'activeTowerIds'
@@ -279,6 +295,7 @@ type LegacySerializableStateV5 = Omit<
   | 'shopPurchasedWaveIndex'
   | 'shopPurchasesInWave'
   | 'shopReturnFlowState'
+  | 'preparationTicksRemaining'
   | 'waveBaseWarPoints'
   | 'waveFocusedKills'
   | 'waveFocusBonusAwarded'
@@ -290,6 +307,13 @@ interface CheckpointEnvelope {
   releaseId: string;
   configHash: string;
   state: SerializableState;
+}
+
+interface LegacyPositionlessCheckpointEnvelope {
+  schemaVersion: typeof LEGACY_POSITIONLESS_CHECKPOINT_SCHEMA_VERSION;
+  releaseId: string;
+  configHash: string;
+  state: LegacySerializableStateV6;
 }
 
 interface LegacyWarlessCheckpointEnvelope {
@@ -724,11 +748,15 @@ function battleMode(bundle: BattleBundleV1): BattleMode {
 
 function initialActiveTowerIds(bundle: BattleBundleV1): TowerId[] {
   if (battleMode(bundle) === 'endless') {
-    return [0, 1, 2];
+    return [...ENDLESS_TOWER_IDS];
   }
-  return [...(bundle.rules.initialActiveTowerIds ?? [0, 1, 2])].sort(
-    (left, right) => left - right,
-  );
+  return [...(bundle.rules.initialActiveTowerIds ?? FIXED_INITIAL_TOWER_IDS)];
+}
+
+function towerBuildRequiredCompletedWaves(towerId: TowerId | null): number {
+  if (towerId === 2) return FIXED_THIRD_TOWER_UNLOCK_COMPLETED_WAVES;
+  if (towerId === 3) return FIXED_FOURTH_TOWER_UNLOCK_COMPLETED_WAVES;
+  return 0;
 }
 
 function gateIntegrityMax(bundle: BattleBundleV1): number {
@@ -796,11 +824,7 @@ class BattleSimulationImpl implements BattleSimulation {
   readonly route: CompiledRoute;
   private state: SerializableState;
   private towerFacingCacheKey = '';
-  private towerFacingCache: TowerAimAnglesU16 = [
-    DEFAULT_AIM_ANGLE_U16,
-    DEFAULT_AIM_ANGLE_U16,
-    DEFAULT_AIM_ANGLE_U16,
-  ];
+  private towerFacingCache: TowerAimAnglesU16 = [];
 
   constructor(bundle: BattleBundleV1, seed: number, checkpoint?: Uint8Array) {
     this.validateBundle(bundle);
@@ -856,7 +880,7 @@ class BattleSimulationImpl implements BattleSimulation {
           this.state.overdriveRemainingTicks !== 0 ||
           !Number.isInteger(command.towerId) ||
           command.towerId < 0 ||
-          command.towerId >= this.bundle.route.towerAnchors.length ||
+          command.towerId >= this.state.towerPositions.length ||
           !this.isTowerActive(command.towerId)
         ) {
           status = 'rejected';
@@ -873,6 +897,27 @@ class BattleSimulationImpl implements BattleSimulation {
             towerId: command.towerId,
             durationTicks: this.state.overdriveRemainingTicks,
           });
+        }
+        break;
+      case 'START_WAVE':
+        if (
+          battleMode(this.bundle) !== 'fixed' ||
+          this.state.flowState !== 'preparing' ||
+          this.state.preparationTicksRemaining <= 0
+        ) {
+          status = 'rejected';
+        } else {
+          this.finishPreparation();
+        }
+        break;
+      case 'BUILD_TOWER':
+        if (!this.buildTower(command.point, output)) {
+          status = 'rejected';
+        }
+        break;
+      case 'MOVE_TOWER':
+        if (!this.moveTower(command.towerId, command.point, output)) {
+          status = 'rejected';
         }
         break;
       case 'OPEN_SHOP':
@@ -963,7 +1008,7 @@ class BattleSimulationImpl implements BattleSimulation {
     if (!Number.isFinite(milliseconds) || milliseconds < 0) {
       throw new Error('Wall time must be a finite non-negative number.');
     }
-    if (this.state.flowState !== 'running') {
+    if (!this.isAdvancingFlowState()) {
       this.state.wallTickRemainder = 0;
       return emptyOutput();
     }
@@ -990,8 +1035,12 @@ class BattleSimulationImpl implements BattleSimulation {
     }
 
     const output = emptyOutput();
-    while (output.ticksAdvanced < ticks && this.state.flowState === 'running') {
-      this.step(output);
+    while (output.ticksAdvanced < ticks && this.isAdvancingFlowState()) {
+      if (this.state.flowState === 'preparing') {
+        this.stepPreparation();
+      } else {
+        this.step(output);
+      }
       output.ticksAdvanced += 1;
     }
     return output;
@@ -1064,7 +1113,7 @@ class BattleSimulationImpl implements BattleSimulation {
       this.state.stats,
       towerStatCaps(this.bundle),
     );
-    const towerRuntime = this.bundle.route.towerAnchors.map((anchor, towerIndex) => {
+    const towerRuntime = this.state.towerPositions.map((anchor, towerIndex) => {
       const towerId = towerIndex as TowerId;
       const active = this.isTowerActive(towerId);
       if (!active) {
@@ -1091,6 +1140,14 @@ class BattleSimulationImpl implements BattleSimulation {
             currentTargetName: this.enemyDefinition(target.definitionId).name,
           };
     }) satisfies TowerRuntimeProjectionV1[];
+    const nextTowerId = mode === 'fixed' ? this.nextInactiveTowerId() : null;
+    const towerBuildCost = mode === 'fixed' ? (this.bundle.rules.towerBuildCost ?? 0) : 0;
+    const requiredCompletedWaves = towerBuildRequiredCompletedWaves(nextTowerId);
+    const towerBuildUnlocked = nextTowerId !== null &&
+      this.state.scheduler.completedWaves >= requiredCompletedWaves;
+    const towerBuildAffordable = nextTowerId !== null &&
+      towerBuildCost > 0 &&
+      this.state.warPointsBalance >= towerBuildCost;
 
     const projection = {
       tick: this.state.tick,
@@ -1107,9 +1164,28 @@ class BattleSimulationImpl implements BattleSimulation {
       waveIndex,
       waveCount,
       progressBp,
+      preparationTicksRemaining: this.state.preparationTicksRemaining,
+      preparationTicksTotal: mode === 'fixed' ? FIXED_WAVE_PREPARATION_TICKS : 0,
+      wavePreviewIndex: this.isPreparationFlowState()
+        ? this.state.scheduler.waveIndex + 1
+        : 0,
       aimAnglesU16: [...this.state.aimAnglesU16] as TowerAimAnglesU16,
       activeTowerIds: [...this.state.activeTowerIds],
+      towerPositions: this.state.towerPositions.map((point) => ({ ...point })),
+      towerBuild: {
+        nextTowerId,
+        cost: towerBuildCost,
+        requiredCompletedWaves,
+        completedWaves: this.state.scheduler.completedWaves,
+        unlocked: towerBuildUnlocked,
+        affordable: towerBuildAffordable,
+        canBuild: mode === 'fixed' &&
+          this.state.flowState === 'preparing' &&
+          towerBuildUnlocked &&
+          towerBuildAffordable,
+      },
       shopAvailable: this.isShopAvailable(),
+      shopOfferOrdinal: this.state.shopOfferOrdinal,
       shopPurchasesThisWave: this.state.shopPurchasesInWave,
       shopPurchaseLimitPerWave: shopPurchaseLimitPerWave(this.bundle),
       shopPurchasedThisWave:
@@ -1134,9 +1210,12 @@ class BattleSimulationImpl implements BattleSimulation {
       },
       towerRuntime,
       ...(endlessProjection === undefined ? {} : { endless: endlessProjection }),
-    } satisfies Omit<HudProjectionV1, 'activeOffer' | 'offerPreviews'>;
+    } satisfies Omit<
+      HudProjectionV1,
+      'shopOffer' | 'shopOfferPreviews' | 'activeOffer' | 'offerPreviews'
+    >;
 
-    if (this.state.flowState !== 'offer-pending' || this.state.activeOffer === null) {
+    if (this.state.activeOffer === null) {
       return projection;
     }
 
@@ -1171,9 +1250,26 @@ class BattleSimulationImpl implements BattleSimulation {
       };
     }) satisfies TowerCardPreviewV1[];
 
+    const projectedOffer = copyOffer(this.state.activeOffer);
+    if (mode === 'fixed') {
+      const shopProjection = {
+        ...projection,
+        shopOffer: projectedOffer,
+        shopOfferPreviews: offerPreviews,
+      };
+      return this.state.flowState === 'offer-pending'
+        ? {
+            ...shopProjection,
+            activeOffer: projectedOffer,
+            offerPreviews,
+          }
+        : shopProjection;
+    }
+
+    if (this.state.flowState !== 'offer-pending') return projection;
     return {
       ...projection,
-      activeOffer: copyOffer(this.state.activeOffer),
+      activeOffer: projectedOffer,
       offerPreviews,
     };
   }
@@ -1205,7 +1301,7 @@ class BattleSimulationImpl implements BattleSimulation {
 
     const towerFacingCacheKey = `${this.state.tick}:${this.state.lastCommandSeq}:${this.state.lastAuthoritySeq}`;
     if (this.towerFacingCacheKey !== towerFacingCacheKey) {
-      this.towerFacingCache = this.bundle.route.towerAnchors.map((anchor, towerIndex) => {
+      this.towerFacingCache = this.state.towerPositions.map((anchor, towerIndex) => {
         if (!this.isTowerActive(towerIndex as TowerId)) {
           return this.state.aimAnglesU16[towerIndex] ?? DEFAULT_AIM_ANGLE_U16;
         }
@@ -1276,9 +1372,11 @@ class BattleSimulationImpl implements BattleSimulation {
       mode: battleMode(this.bundle),
       tick: this.state.tick,
       flowState: this.state.flowState,
+      preparationTicksRemaining: this.state.preparationTicksRemaining,
       outcome: this.state.outcome,
       aimAnglesU16: this.state.aimAnglesU16,
       towerCooldowns: this.state.towerCooldowns,
+      towerPositions: this.state.towerPositions,
       enemies: [...this.state.enemies].sort((left, right) => left.entityId - right.entityId),
       projectiles: [...this.state.projectiles].sort((left, right) => left.entityId - right.entityId),
       scheduler: this.state.scheduler,
@@ -1328,8 +1426,16 @@ class BattleSimulationImpl implements BattleSimulation {
       throw new Error('Battle bundle requires a release id and config hash.');
     }
     const mode = battleMode(bundle);
-    if (bundle.route.towerAnchors.length !== 3) {
-      throw new Error('A battle stage requires exactly three towers.');
+    if ((bundle.stage.id === 'STAGE_08') !== (mode === 'endless')) {
+      throw new Error('Stage 08 is reserved for endless mode and fixed stages cannot use it.');
+    }
+    const expectedTowerCount = mode === 'fixed' ? FIXED_TOWER_COUNT : ENDLESS_TOWER_COUNT;
+    if (bundle.route.towerAnchors.length !== expectedTowerCount) {
+      throw new Error(
+        mode === 'fixed'
+          ? 'A fixed battle stage requires exactly four tower slots.'
+          : 'Stage 08 requires exactly three towers.',
+      );
     }
     if (mode === 'fixed' && bundle.waves.length !== 5) {
       throw new Error('A fixed battle stage requires exactly five waves.');
@@ -1339,6 +1445,27 @@ class BattleSimulationImpl implements BattleSimulation {
     }
     if (bundle.route.points.length < 2) {
       throw new Error('A battle stage route requires at least two points.');
+    }
+    if (
+      [...bundle.route.points, ...bundle.route.towerAnchors, bundle.route.breachPoint].some(
+        (point) =>
+          typeof point !== 'object' ||
+          point === null ||
+          !Number.isFinite(point.x) ||
+          !Number.isFinite(point.y),
+      )
+    ) {
+      throw new Error('Battle route and tower points must be finite.');
+    }
+    const combatStartDistancePx = bundle.route.combatStartDistancePx;
+    if (
+      combatStartDistancePx !== undefined && (
+        !Number.isSafeInteger(combatStartDistancePx) ||
+        combatStartDistancePx <= 0 ||
+        combatStartDistancePx * MILLI_PX >= compileRoute(bundle.route.points).totalLengthMilli
+      )
+    ) {
+      throw new Error('Battle route combat start distance must be a positive integer inside the route.');
     }
     if (
       !Number.isInteger(bundle.tower.aimHalfAngleU16) ||
@@ -1417,7 +1544,7 @@ class BattleSimulationImpl implements BattleSimulation {
         new Set(bundle.rules.initialActiveTowerIds).size !==
           bundle.rules.initialActiveTowerIds.length ||
         bundle.rules.initialActiveTowerIds.some(
-          (towerId) => !Number.isInteger(towerId) || towerId < 0 || towerId > 2,
+          (towerId) => !Number.isInteger(towerId) || towerId < 0 || towerId > 3,
         )
       )) ||
       (bundle.rules.towerBuildCost !== undefined && (
@@ -1441,6 +1568,7 @@ class BattleSimulationImpl implements BattleSimulation {
     if (
       mode === 'endless' &&
       (
+        bundle.route.combatStartDistancePx !== undefined ||
         bundle.rules.gateIntegrity !== undefined ||
         bundle.rules.reviveGateRestoreBp !== undefined ||
         bundle.rules.focusDamageBonusBp !== undefined ||
@@ -1565,12 +1693,17 @@ class BattleSimulationImpl implements BattleSimulation {
     const configuredActiveTowers = initialActiveTowerIds(bundle);
     if (
       mode === 'fixed' &&
-      configuredActiveTowers.length < bundle.route.towerAnchors.length &&
-      (!Number.isSafeInteger(bundle.rules.towerBuildCost) ||
-        !Number.isSafeInteger(bundle.rules.towerUnlockCompletedWaves) ||
-        !bundle.cards.some((card) => card.effectId === 'tower-count'))
+      (
+        configuredActiveTowers.length !== FIXED_INITIAL_TOWER_IDS.length ||
+        configuredActiveTowers.some(
+          (towerId, index) => towerId !== FIXED_INITIAL_TOWER_IDS[index],
+        ) ||
+        !Number.isSafeInteger(bundle.rules.towerBuildCost) ||
+        bundle.rules.towerUnlockCompletedWaves !==
+          FIXED_THIRD_TOWER_UNLOCK_COMPLETED_WAVES
+      )
     ) {
-      throw new Error('A fixed stage with locked towers requires a priced reinforcement card.');
+      throw new Error('A fixed stage must start with towers 0–1 and unlock towers 2/3 after waves 2/4.');
     }
     for (const [waveIndex, wave] of bundle.waves.entries()) {
       if (
@@ -1685,30 +1818,26 @@ class BattleSimulationImpl implements BattleSimulation {
 
   private createInitialState(seed: number): SerializableState {
     const normalizedSeed = seed >>> 0 || 0x6d2b79f5;
+    const fixedCampaign = battleMode(this.bundle) === 'fixed';
     return {
       tick: 0,
       speed: 1,
-      flowState: 'running',
+      flowState: fixedCampaign ? 'preparing' : 'running',
+      preparationTicksRemaining: fixedCampaign ? FIXED_WAVE_PREPARATION_TICKS : 0,
       outcome: null,
-      aimAnglesU16: [
-        DEFAULT_AIM_ANGLE_U16,
-        DEFAULT_AIM_ANGLE_U16,
-        DEFAULT_AIM_ANGLE_U16,
-      ],
-      towerCooldowns: battleMode(this.bundle) === 'fixed'
-        ? [
-            0,
-            Math.ceil(this.bundle.tower.attackIntervalTicks / 3),
-            Math.ceil((this.bundle.tower.attackIntervalTicks * 2) / 3),
-          ]
-        : [0, 0, 0],
+      aimAnglesU16: this.bundle.route.towerAnchors.map(() => DEFAULT_AIM_ANGLE_U16),
+      towerCooldowns: this.bundle.route.towerAnchors.map((_, towerIndex) => {
+        if (!fixedCampaign || towerIndex === 0 || towerIndex === 3) return 0;
+        return Math.ceil((this.bundle.tower.attackIntervalTicks * towerIndex) / 3);
+      }),
+      towerPositions: this.bundle.route.towerAnchors.map((point) => ({ ...point })),
       enemies: [],
       projectiles: [],
       scheduler: {
         waveIndex: 0,
         groupIndex: 0,
         unitIndex: 0,
-        nextSpawnTick: 0,
+        nextSpawnTick: fixedCampaign ? FIXED_WAVE_PREPARATION_TICKS : 0,
         allGroupsSpawned: false,
         completedWaves: 0,
         currentWaveSpawned: 0,
@@ -1785,6 +1914,7 @@ class BattleSimulationImpl implements BattleSimulation {
     const schemaVersion = (parsed as { schemaVersion?: unknown }).schemaVersion;
     if (
       schemaVersion !== CHECKPOINT_SCHEMA_VERSION &&
+      schemaVersion !== LEGACY_POSITIONLESS_CHECKPOINT_SCHEMA_VERSION &&
       schemaVersion !== LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION &&
       schemaVersion !== LEGACY_GATELESS_CHECKPOINT_SCHEMA_VERSION &&
       schemaVersion !== LEGACY_INDEPENDENT_AIM_CHECKPOINT_SCHEMA_VERSION &&
@@ -1794,6 +1924,7 @@ class BattleSimulationImpl implements BattleSimulation {
     }
     const envelope = parsed as
       | CheckpointEnvelope
+      | LegacyPositionlessCheckpointEnvelope
       | LegacyWarlessCheckpointEnvelope
       | LegacyGatelessCheckpointEnvelope
       | LegacyIndependentAimCheckpointEnvelope
@@ -1840,7 +1971,11 @@ class BattleSimulationImpl implements BattleSimulation {
     }
     if (
       !Array.isArray(envelope.state.aimAnglesU16) ||
-      envelope.state.aimAnglesU16.length !== this.bundle.route.towerAnchors.length ||
+      envelope.state.aimAnglesU16.length !== (
+        envelope.schemaVersion === CHECKPOINT_SCHEMA_VERSION
+          ? this.bundle.route.towerAnchors.length
+          : ENDLESS_TOWER_COUNT
+      ) ||
       envelope.state.aimAnglesU16.some((angle) => !Number.isInteger(angle))
     ) {
       throw new Error('Checkpoint tower aim angles are malformed.');
@@ -1854,6 +1989,9 @@ class BattleSimulationImpl implements BattleSimulation {
     if (envelope.schemaVersion === LEGACY_WARLESS_CHECKPOINT_SCHEMA_VERSION) {
       return this.migrateWarlessState(envelope.state, legacyWarlessConfigHash);
     }
+    if (envelope.schemaVersion === LEGACY_POSITIONLESS_CHECKPOINT_SCHEMA_VERSION) {
+      return this.migratePositionlessState(envelope.state);
+    }
     if (
       (battleMode(this.bundle) === 'endless' && envelope.state.endless === null) ||
       (battleMode(this.bundle) === 'fixed' && envelope.state.endless !== null)
@@ -1863,6 +2001,34 @@ class BattleSimulationImpl implements BattleSimulation {
     const restored = JSON.parse(JSON.stringify(envelope.state)) as SerializableState;
     this.validateCheckpointState(restored);
     return restored;
+  }
+
+  private padLegacyTowerNumbers(values: number[], fillValue: number): number[] {
+    if (!Array.isArray(values) || values.length !== ENDLESS_TOWER_COUNT) {
+      throw new Error('Legacy checkpoint tower arrays are malformed.');
+    }
+    return this.bundle.route.towerAnchors.map((_, towerIndex) =>
+      towerIndex < values.length ? values[towerIndex]! : fillValue);
+  }
+
+  private migratePositionlessState(state: LegacySerializableStateV6): SerializableState {
+    const cloned = JSON.parse(JSON.stringify(state)) as
+      LegacySerializableStateV6 & { preparationTicksRemaining?: unknown };
+    const migrated: SerializableState = {
+      ...cloned,
+      preparationTicksRemaining:
+        cloned.preparationTicksRemaining === undefined
+          ? 0
+          : cloned.preparationTicksRemaining as number,
+      aimAnglesU16: this.padLegacyTowerNumbers(
+        cloned.aimAnglesU16,
+        DEFAULT_AIM_ANGLE_U16,
+      ),
+      towerCooldowns: this.padLegacyTowerNumbers(cloned.towerCooldowns, 0),
+      towerPositions: this.bundle.route.towerAnchors.map((point) => ({ ...point })),
+    };
+    this.validateCheckpointState(migrated);
+    return migrated;
   }
 
   private migrateLegacyState(
@@ -1961,6 +2127,13 @@ class BattleSimulationImpl implements BattleSimulation {
     }
     const migrated: SerializableState = {
       ...cloned,
+      preparationTicksRemaining: 0,
+      aimAnglesU16: this.padLegacyTowerNumbers(
+        cloned.aimAnglesU16,
+        DEFAULT_AIM_ANGLE_U16,
+      ),
+      towerCooldowns: this.padLegacyTowerNumbers(cloned.towerCooldowns, 0),
+      towerPositions: this.bundle.route.towerAnchors.map((point) => ({ ...point })),
       warPointsBalance: 0,
       warPointsEarned: 0,
       // A legacy run already simulated all three towers. Preserve that combat state
@@ -2061,6 +2234,7 @@ class BattleSimulationImpl implements BattleSimulation {
 
   private validateCheckpointState(state: SerializableState): void {
     const validFlowStates: readonly BattleFlowState[] = [
+      'preparing',
       'running',
       'paused',
       'offer-pending',
@@ -2071,6 +2245,7 @@ class BattleSimulationImpl implements BattleSimulation {
     const stats = state.stats;
     const maximumGateIntegrity = gateIntegrityMax(this.bundle);
     const overdriveDuration = overdriveDurationTicks(this.bundle);
+    const preparationFlowActive = this.isPreparationFlowState(state);
     const maximumBattleTick = this.maximumBattleTick();
     const tickIsWithinBattleLifetime = Number.isSafeInteger(state.tick) &&
       state.tick >= 0 &&
@@ -2102,10 +2277,23 @@ class BattleSimulationImpl implements BattleSimulation {
           cooldown < 0 ||
           cooldown > Math.max(MIN_ATTACK_INTERVAL_TICKS, this.bundle.tower.attackIntervalTicks),
       ) ||
+      !Array.isArray(state.towerPositions) ||
+      state.towerPositions.length !== this.bundle.route.towerAnchors.length ||
+      state.towerPositions.some(
+        (point) =>
+          typeof point !== 'object' ||
+          point === null ||
+          !Number.isFinite(point.x) ||
+          !Number.isFinite(point.y),
+      ) ||
       !Number.isSafeInteger(state.tick) ||
       state.tick < 0 ||
       state.tick > maximumBattleTick ||
       !validFlowStates.includes(state.flowState) ||
+      !Number.isSafeInteger(state.preparationTicksRemaining) ||
+      state.preparationTicksRemaining < 0 ||
+      state.preparationTicksRemaining > FIXED_WAVE_PREPARATION_TICKS ||
+      (preparationFlowActive !== (state.preparationTicksRemaining > 0)) ||
       (state.speed !== 1 && state.speed !== 2) ||
       !Array.isArray(state.aimAnglesU16) ||
       state.aimAnglesU16.length !== this.bundle.route.towerAnchors.length ||
@@ -2167,10 +2355,10 @@ class BattleSimulationImpl implements BattleSimulation {
       state.activeTowerIds.length > this.bundle.route.towerAnchors.length ||
       new Set(state.activeTowerIds).size !== state.activeTowerIds.length ||
       state.activeTowerIds.some(
-        (towerId) => !Number.isInteger(towerId) || towerId < 0 || towerId > 2,
+        (towerId) => !Number.isInteger(towerId) || towerId < 0 || towerId > 3,
       ) ||
       state.activeTowerIds.some(
-        (towerId, index) => index > 0 && towerId <= state.activeTowerIds[index - 1]!,
+        (towerId, index) => towerId !== index,
       ) ||
       initialActiveTowerIds(this.bundle).some(
         (towerId) => !state.activeTowerIds.includes(towerId),
@@ -2188,7 +2376,7 @@ class BattleSimulationImpl implements BattleSimulation {
       state.shopPurchasesInWave > shopPurchaseLimitPerWave(this.bundle) ||
       ((state.shopPurchasedWaveIndex === scheduler.waveIndex) !==
         (state.shopPurchasesInWave > 0)) ||
-      !(['running', 'paused', null] as const).includes(state.shopReturnFlowState) ||
+      !(['preparing', 'running', 'paused', null] as const).includes(state.shopReturnFlowState) ||
       !Number.isSafeInteger(state.waveBaseWarPoints) ||
       state.waveBaseWarPoints < 0 ||
       !Number.isSafeInteger(state.waveFocusedKills) ||
@@ -2199,9 +2387,14 @@ class BattleSimulationImpl implements BattleSimulation {
       state.waveFocusBonusAwarded > Math.floor(state.waveBaseWarPoints / 10) ||
       typeof state.waveBreached !== 'boolean' ||
       (battleMode(this.bundle) === 'endless' && (
+        state.preparationTicksRemaining !== 0 ||
         state.warPointsBalance !== 0 ||
         state.warPointsEarned !== 0 ||
         state.activeTowerIds.length !== this.bundle.route.towerAnchors.length ||
+        state.towerPositions.some((point, index) => {
+          const authored = this.bundle.route.towerAnchors[index];
+          return authored === undefined || point.x !== authored.x || point.y !== authored.y;
+        }) ||
         state.shopOfferOrdinal !== 0 ||
         state.shopOfferWaveIndex !== -1 ||
         state.shopPurchasedWaveIndex !== -1 ||
@@ -2275,6 +2468,25 @@ class BattleSimulationImpl implements BattleSimulation {
       state.wallTickRemainder >= 1_000_000
     ) {
       throw new Error('Checkpoint state collections or entity sequences are malformed.');
+    }
+    this.validateCheckpointTowerPositions(state);
+    if (
+      battleMode(this.bundle) === 'fixed' &&
+      preparationFlowActive &&
+      (
+        state.outcome !== null ||
+        (state.flowState === 'preparing' && state.shopReturnFlowState !== null) ||
+        scheduler.groupIndex !== 0 ||
+        scheduler.unitIndex !== 0 ||
+        scheduler.allGroupsSpawned ||
+        scheduler.currentWaveSpawned !== 0 ||
+        scheduler.currentWaveKilled !== 0 ||
+        state.enemies.length !== 0 ||
+        state.projectiles.length !== 0 ||
+        scheduler.nextSpawnTick !== state.tick + state.preparationTicksRemaining
+      )
+    ) {
+      throw new Error('Checkpoint fixed wave preparation is inconsistent.');
     }
     const hasActiveOffer = state.activeOffer !== null;
     if (
@@ -2639,6 +2851,45 @@ class BattleSimulationImpl implements BattleSimulation {
     }
   }
 
+  private validateCheckpointTowerPositions(state: SerializableState): void {
+    for (let towerIndex = 0; towerIndex < state.towerPositions.length; towerIndex += 1) {
+      const towerId = towerIndex as TowerId;
+      const position = state.towerPositions[towerIndex];
+      const authored = this.bundle.route.towerAnchors[towerIndex];
+      if (position === undefined || authored === undefined) {
+        throw new Error('Checkpoint tower position references a missing slot.');
+      }
+      const matchesAuthored = position.x === authored.x && position.y === authored.y;
+      if (!state.activeTowerIds.includes(towerId)) {
+        if (!matchesAuthored) {
+          throw new Error('Checkpoint inactive tower positions must match authored anchors.');
+        }
+        continue;
+      }
+      // Authored anchors are trusted for legacy/off-grid compatibility. Every
+      // run-local custom position must satisfy the same rules as MOVE_TOWER.
+      if (matchesAuthored) continue;
+      const existingTowerPoints = state.activeTowerIds
+        .filter((activeTowerId) => activeTowerId !== towerId)
+        .map((activeTowerId) => state.towerPositions[activeTowerId])
+        .filter((existing): existing is Point => existing !== undefined);
+      const validation = validateTowerPlacement({
+        point: position,
+        buildZones: createDefaultTowerBuildZones(),
+        routePoints: this.bundle.route.points,
+        breachPoint: this.bundle.route.breachPoint,
+        existingTowerPoints,
+      });
+      if (
+        !validation.valid ||
+        validation.point.x !== position.x ||
+        validation.point.y !== position.y
+      ) {
+        throw new Error('Checkpoint contains an invalid custom tower position.');
+      }
+    }
+  }
+
   private validateFixedSchedulerState(state: SerializableState): void {
     const scheduler = state.scheduler;
     const waveCount = this.bundle.waves.length;
@@ -2666,6 +2917,7 @@ class BattleSimulationImpl implements BattleSimulation {
       : scheduler.groupIndex < wave.groups.length &&
         scheduler.unitIndex < (wave.groups[scheduler.groupIndex]?.count ?? 0);
     const currentGroup = wave.groups[scheduler.groupIndex];
+    const preparationFlowActive = this.isPreparationFlowState(state);
     const maximumPendingSpawnDelay = scheduler.groupIndex === 0 && scheduler.unitIndex === 0
       ? scheduler.waveIndex === 0
         ? 0
@@ -2673,10 +2925,12 @@ class BattleSimulationImpl implements BattleSimulation {
       : scheduler.unitIndex === 0
         ? Math.max(0, this.bundle.rules.groupGapTicks - 1)
         : Math.max(0, (currentGroup?.intervalTicks ?? 0) - 1);
-    const spawnTimingIsValid = scheduler.allGroupsSpawned
-      ? scheduler.nextSpawnTick < state.tick
-      : scheduler.nextSpawnTick >= state.tick &&
-        scheduler.nextSpawnTick - state.tick <= maximumPendingSpawnDelay;
+    const spawnTimingIsValid = preparationFlowActive
+      ? scheduler.nextSpawnTick === state.tick + state.preparationTicksRemaining
+      : scheduler.allGroupsSpawned
+        ? scheduler.nextSpawnTick < state.tick
+        : scheduler.nextSpawnTick >= state.tick &&
+          scheduler.nextSpawnTick - state.tick <= maximumPendingSpawnDelay;
     const expectedSpawned = scheduler.allGroupsSpawned
       ? totalWaveUnits
       : wave.groups
@@ -2701,7 +2955,7 @@ class BattleSimulationImpl implements BattleSimulation {
       !cursorIsValid ||
       !spawnTimingIsValid ||
       state.tick > maximumWaveTerminalTick ||
-      scheduler.nextSpawnTick > maximumCursorSpawnTick ||
+      (!preparationFlowActive && scheduler.nextSpawnTick > maximumCursorSpawnTick) ||
       scheduler.currentWaveSpawned !== expectedSpawned ||
       scheduler.currentWaveKilled > scheduler.currentWaveSpawned ||
       scheduler.currentWaveSpawned - scheduler.currentWaveKilled !== state.enemies.length ||
@@ -2872,13 +3126,13 @@ class BattleSimulationImpl implements BattleSimulation {
   }
 
   private maximumFixedWaveStartTick(waveIndex: number): number {
-    let maximumStartTick = 0;
+    let maximumStartTick = FIXED_WAVE_PREPARATION_TICKS;
     for (let index = 0; index < waveIndex; index += 1) {
       const wave = this.bundle.waves[index];
       if (wave === undefined) break;
       maximumStartTick += this.fixedWaveSpawnSpanTicks(wave) +
         this.maximumFixedWaveLifetimeTicks(wave) +
-        this.bundle.rules.waveGapTicks;
+        FIXED_WAVE_PREPARATION_TICKS + 1;
     }
     if (!Number.isSafeInteger(maximumStartTick) || maximumStartTick < 0) {
       throw new Error('Fixed wave schedule exceeds the safe tick range.');
@@ -2974,6 +3228,40 @@ class BattleSimulationImpl implements BattleSimulation {
 
   private cloneState(): SerializableState {
     return JSON.parse(JSON.stringify(this.state)) as SerializableState;
+  }
+
+  private isAdvancingFlowState(): boolean {
+    return this.state.flowState === 'running' || this.state.flowState === 'preparing';
+  }
+
+  private isPreparationFlowState(state: SerializableState = this.state): boolean {
+    return state.flowState === 'preparing' ||
+      (state.flowState === 'offer-pending' && state.shopReturnFlowState === 'preparing');
+  }
+
+  private finishPreparation(): void {
+    if (battleMode(this.bundle) !== 'fixed') {
+      throw new Error('Endless stages cannot finish fixed-wave preparation.');
+    }
+    this.state.preparationTicksRemaining = 0;
+    this.state.flowState = 'running';
+    this.state.scheduler.nextSpawnTick = this.state.tick;
+    this.state.wallTickRemainder = 0;
+  }
+
+  private stepPreparation(): void {
+    if (
+      battleMode(this.bundle) !== 'fixed' ||
+      this.state.flowState !== 'preparing' ||
+      this.state.preparationTicksRemaining <= 0
+    ) {
+      throw new Error('Wave preparation state is malformed.');
+    }
+    this.state.preparationTicksRemaining -= 1;
+    this.state.tick = this.checkedTickAdd(this.state.tick, 1, 'Wave preparation');
+    if (this.state.preparationTicksRemaining === 0) {
+      this.finishPreparation();
+    }
   }
 
   private step(output: SimulationOutput): void {
@@ -3818,14 +4106,14 @@ class BattleSimulationImpl implements BattleSimulation {
       this.state.stats,
       towerStatCaps(this.bundle),
     );
-    for (let towerIndex = 0; towerIndex < this.bundle.route.towerAnchors.length; towerIndex += 1) {
+    for (let towerIndex = 0; towerIndex < this.state.towerPositions.length; towerIndex += 1) {
       if (!this.isTowerActive(towerIndex as TowerId)) {
         continue;
       }
       if ((this.state.towerCooldowns[towerIndex] ?? 0) > 0) {
         continue;
       }
-      const anchor = this.bundle.route.towerAnchors[towerIndex];
+      const anchor = this.state.towerPositions[towerIndex];
       if (!anchor) {
         continue;
       }
@@ -3973,11 +4261,7 @@ class BattleSimulationImpl implements BattleSimulation {
 
     const candidates: Array<{ enemy: EnemyState; preferred: boolean }> = [];
     for (const enemy of this.state.enemies) {
-      if (enemy.hpMilli <= 0) continue;
-      if (
-        enemy.invulnerableUntilTick !== undefined &&
-        this.state.tick < enemy.invulnerableUntilTick
-      ) continue;
+      if (!this.isEnemyCombatEligible(enemy)) continue;
       const point = pointAtDistance(this.route, enemy.distanceMilli);
       if (point.yMilli < TARGETABLE_SCREEN_MIN_Y_PX * MILLI_PX) continue;
       const deltaX = point.xMilli - anchorX;
@@ -4071,7 +4355,7 @@ class BattleSimulationImpl implements BattleSimulation {
       const penetrationTargets = this.state.enemies
         .filter(
           (enemy) =>
-            enemy.hpMilli > 0 &&
+            this.isEnemyCombatEligible(enemy) &&
             enemy.entityId !== target.entityId &&
             enemy.distanceMilli <= impactDistance &&
             impactDistance - enemy.distanceMilli <= 180 * MILLI_PX,
@@ -4104,15 +4388,7 @@ class BattleSimulationImpl implements BattleSimulation {
     penetrationIndex: number,
     output: SimulationOutput,
   ): void {
-    if (enemy.hpMilli <= 0) {
-      return;
-    }
-    if (
-      enemy.invulnerableUntilTick !== undefined &&
-      this.state.tick < enemy.invulnerableUntilTick
-    ) {
-      return;
-    }
+    if (!this.isEnemyCombatEligible(enemy)) return;
     const definition = this.enemyDefinition(enemy.definitionId);
     const guardAuraArmorBp = this.guardAuraArmorBpFor(enemy);
     const effectiveArmorBp = Math.min(
@@ -4207,6 +4483,18 @@ class BattleSimulationImpl implements BattleSimulation {
       this.awardKillWarPoints(definition, enemy.entityId, focused, output);
       this.requestLevelIfReady(output);
     }
+  }
+
+  private isEnemyCombatEligible(enemy: EnemyState): boolean {
+    if (enemy.hpMilli <= 0) return false;
+    if (
+      enemy.invulnerableUntilTick !== undefined &&
+      this.state.tick < enemy.invulnerableUntilTick
+    ) {
+      return false;
+    }
+    const combatStartDistancePx = this.bundle.route.combatStartDistancePx ?? 0;
+    return enemy.distanceMilli >= combatStartDistancePx * MILLI_PX;
   }
 
   private advanceEndlessBossLayer(enemy: EnemyState, output: SimulationOutput): void {
@@ -4392,8 +4680,8 @@ class BattleSimulationImpl implements BattleSimulation {
     scheduler.unitIndex = 0;
     scheduler.nextSpawnTick = this.checkedTickAdd(
       this.state.tick,
-      this.bundle.rules.waveGapTicks,
-      'Fixed wave gap',
+      FIXED_WAVE_PREPARATION_TICKS + 1,
+      'Fixed wave preparation',
     );
     scheduler.allGroupsSpawned = false;
     scheduler.currentWaveSpawned = 0;
@@ -4406,6 +4694,9 @@ class BattleSimulationImpl implements BattleSimulation {
     this.state.shopOfferWaveIndex = -1;
     this.state.shopPurchasesInWave = 0;
     this.state.shopReturnFlowState = null;
+    this.state.flowState = 'preparing';
+    this.state.preparationTicksRemaining = FIXED_WAVE_PREPARATION_TICKS;
+    this.state.wallTickRemainder = 0;
   }
 
   private requestLevelIfReady(output: SimulationOutput): void {
@@ -4475,12 +4766,6 @@ class BattleSimulationImpl implements BattleSimulation {
         (this.state.stats.critDamageAddBp < MAX_CRIT_DAMAGE_ADD_BP &&
           effective.critDamageBp < MAX_CRIT_DAMAGE_BP)
       ) eligible.push('critical-mastery');
-      if (
-        this.state.activeTowerIds.length < this.bundle.route.towerAnchors.length &&
-        this.state.scheduler.completedWaves >=
-          (this.bundle.rules.towerUnlockCompletedWaves ?? Number.MAX_SAFE_INTEGER) &&
-        this.bundle.rules.towerBuildCost !== undefined
-      ) eligible.push('tower-count');
     } else {
       if (
         this.state.stats.critChanceAddBp < MAX_CRIT_CHANCE_ADD_BP &&
@@ -4498,6 +4783,109 @@ class BattleSimulationImpl implements BattleSimulation {
     return this.state.activeTowerIds.includes(towerId);
   }
 
+  private nextInactiveTowerId(): TowerId | null {
+    return ([0, 1, 2, 3] as const).find(
+      (towerId) =>
+        towerId < this.state.towerPositions.length &&
+        !this.state.activeTowerIds.includes(towerId),
+    ) ?? null;
+  }
+
+  private validateRequestedTowerPlacement(
+    point: Point,
+    movingTowerId?: TowerId,
+  ): Point | undefined {
+    if (
+      typeof point !== 'object' ||
+      point === null ||
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.y)
+    ) {
+      return undefined;
+    }
+    const existingTowerPoints = this.state.activeTowerIds
+      .filter((towerId) => towerId !== movingTowerId)
+      .map((towerId) => this.state.towerPositions[towerId])
+      .filter((existing): existing is Point => existing !== undefined);
+    const result = validateTowerPlacement({
+      point,
+      buildZones: createDefaultTowerBuildZones(),
+      routePoints: this.bundle.route.points,
+      breachPoint: this.bundle.route.breachPoint,
+      existingTowerPoints,
+    });
+    return result.valid ? result.point : undefined;
+  }
+
+  private buildTower(point: Point, output: SimulationOutput): boolean {
+    if (
+      battleMode(this.bundle) !== 'fixed' ||
+      this.state.flowState !== 'preparing' ||
+      this.state.outcome !== null
+    ) {
+      return false;
+    }
+    const towerId = this.nextInactiveTowerId();
+    const cost = this.bundle.rules.towerBuildCost;
+    if (
+      towerId === null ||
+      !Number.isSafeInteger(cost) ||
+      cost === undefined ||
+      cost <= 0 ||
+      this.state.scheduler.completedWaves < towerBuildRequiredCompletedWaves(towerId) ||
+      this.state.warPointsBalance < cost
+    ) {
+      return false;
+    }
+    const position = this.validateRequestedTowerPlacement(point);
+    if (position === undefined) return false;
+
+    this.assertEventSequenceCapacity(1);
+    this.state.warPointsBalance -= cost;
+    this.state.activeTowerIds.push(towerId);
+    this.state.activeTowerIds.sort((left, right) => left - right);
+    this.state.towerPositions[towerId] = { ...position };
+    this.state.towerCooldowns[towerId] = 0;
+    this.state.aimAnglesU16[towerId] = DEFAULT_AIM_ANGLE_U16;
+    output.events.push({
+      eventId: this.nextEventId(),
+      tick: this.state.tick,
+      type: 'TOWER_BUILT',
+      towerId,
+      point: { ...position },
+      cost,
+      balance: this.state.warPointsBalance,
+    });
+    return true;
+  }
+
+  private moveTower(towerId: TowerId, point: Point, output: SimulationOutput): boolean {
+    if (
+      battleMode(this.bundle) !== 'fixed' ||
+      this.state.flowState !== 'preparing' ||
+      this.state.outcome !== null ||
+      !Number.isInteger(towerId) ||
+      towerId < 0 ||
+      towerId >= this.state.towerPositions.length ||
+      !this.isTowerActive(towerId)
+    ) {
+      return false;
+    }
+    const position = this.validateRequestedTowerPlacement(point, towerId);
+    if (position === undefined) return false;
+
+    this.assertEventSequenceCapacity(1);
+    this.state.towerPositions[towerId] = { ...position };
+    output.events.push({
+      eventId: this.nextEventId(),
+      tick: this.state.tick,
+      type: 'TOWER_MOVED',
+      towerId,
+      point: { ...position },
+    });
+    return true;
+  }
+
   private cardWarPointCost(card: CardDefinition): number {
     const cost = card.effectId === 'tower-count'
       ? this.bundle.rules.towerBuildCost
@@ -4511,7 +4899,9 @@ class BattleSimulationImpl implements BattleSimulation {
   private isShopAvailable(): boolean {
     if (
       battleMode(this.bundle) !== 'fixed' ||
-      (this.state.flowState !== 'running' && this.state.flowState !== 'paused') ||
+      (this.state.flowState !== 'preparing' &&
+        this.state.flowState !== 'running' &&
+        this.state.flowState !== 'paused') ||
       this.state.outcome !== null ||
       this.state.shopPurchasesInWave >= shopPurchaseLimitPerWave(this.bundle)
     ) {
@@ -4523,7 +4913,7 @@ class BattleSimulationImpl implements BattleSimulation {
 
   private openShop(output: SimulationOutput): boolean {
     if (!this.isShopAvailable()) return false;
-    const returnFlowState = this.state.flowState as 'running' | 'paused';
+    const returnFlowState = this.state.flowState as 'preparing' | 'running' | 'paused';
     const waveIndex = this.state.scheduler.waveIndex;
     if (this.state.shopOfferWaveIndex !== waveIndex) {
       this.state.activeOffer = null;
@@ -4657,7 +5047,7 @@ class BattleSimulationImpl implements BattleSimulation {
 
   private applyCardEffect(card: CardDefinition): TowerId | null {
     if (card.effectId === 'tower-count') {
-      const towerId = ([0, 1, 2] as const).find(
+      const towerId = ([0, 1, 2, 3] as const).find(
         (candidate) => !this.state.activeTowerIds.includes(candidate),
       );
       if (towerId === undefined) {

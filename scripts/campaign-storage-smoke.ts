@@ -8,7 +8,11 @@ import {
 } from '../src/core/campaign';
 import { createBattleSimulation } from '../src/core/battle-sim';
 import { resolveStageBundleForSeed } from '../src/core/content';
-import type { BattleEvent, BattleStageId } from '../src/core/contracts';
+import {
+  FIXED_WAVE_PREPARATION_TICKS,
+  type BattleEvent,
+  type BattleStageId,
+} from '../src/core/contracts';
 import { GuardianGateGame } from '../src/GuardianGateGame';
 import { LocalPracticeAuthority, type LocalAuthoritySnapshotV1 } from '../src/core/local-authority';
 import {
@@ -615,16 +619,36 @@ assert.equal(offerController.currentOfferOrdinal, 7);
 const commandResumeBundle = resolveStageBundleForSeed('STAGE_01', 0x51ec0de);
 const commandResumeSeed = 0x51ec0de;
 const commandBeforeSave = createBattleSimulation(commandResumeBundle, commandResumeSeed);
+const commandInitialHud = commandBeforeSave.getHudProjection();
+assert.equal(commandInitialHud.flowState, 'preparing');
+assert.equal(commandInitialHud.preparationTicksRemaining, FIXED_WAVE_PREPARATION_TICKS);
+assert.equal(commandInitialHud.preparationTicksTotal, FIXED_WAVE_PREPARATION_TICKS);
+assert.deepEqual(commandInitialHud.activeTowerIds, [0, 1]);
+assert.equal(commandInitialHud.aimAnglesU16.length, 4);
+assert.equal(commandInitialHud.towerPositions.length, 4);
 assert.equal(commandBeforeSave.applyCommand({
   seq: 1_000_001,
+  type: 'START_WAVE',
+}).commandAcks[0]?.status, 'applied');
+assert.equal(commandBeforeSave.applyCommand({
+  seq: 1_000_002,
   type: 'PAUSE',
 }).commandAcks[0]?.status, 'applied');
+const commandCheckpoint = commandBeforeSave.createCheckpoint();
+assert.equal(
+  (JSON.parse(decodeText(commandCheckpoint)) as { schemaVersion?: unknown }).schemaVersion,
+  7,
+);
 const restoredCommandSimulation = createBattleSimulation(
   commandResumeBundle,
   commandResumeSeed,
-  commandBeforeSave.createCheckpoint(),
+  commandCheckpoint,
 );
-assert.equal(restoredCommandSimulation.getHudProjection().lastCommandSeq, 1_000_001);
+const restoredCommandHud = restoredCommandSimulation.getHudProjection();
+assert.equal(restoredCommandHud.lastCommandSeq, 1_000_002);
+assert.deepEqual(restoredCommandHud.activeTowerIds, [0, 1]);
+assert.equal(restoredCommandHud.aimAnglesU16.length, 4);
+assert.equal(restoredCommandHud.towerPositions.length, 4);
 const commandResumeController = Object.create(GuardianGateGame.prototype) as Record<string, any>;
 commandResumeController.simulation = restoredCommandSimulation;
 commandResumeController.commandSequence = Math.max(
@@ -634,7 +658,7 @@ commandResumeController.commandSequence = Math.max(
 commandResumeController.processOutput = (): void => {};
 commandResumeController.refreshBattleProjection = (): void => {};
 assert.equal(commandResumeController.issueCommand({ type: 'RESUME' }), 'applied');
-assert.equal(commandResumeController.commandSequence, 1_000_002);
+assert.equal(commandResumeController.commandSequence, 1_000_003);
 assert.equal(restoredCommandSimulation.getHudProjection().flowState, 'running');
 
 let savedDefeatPending: SavedBattleV2 | undefined;

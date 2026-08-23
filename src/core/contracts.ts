@@ -1,5 +1,6 @@
 export const PROTOCOL_VERSION = 1 as const;
 export const TICKS_PER_SECOND = 30 as const;
+export const FIXED_WAVE_PREPARATION_TICKS = 6 * TICKS_PER_SECOND;
 export const DESIGN_WIDTH = 1920 as const;
 export const DESIGN_HEIGHT = 1080 as const;
 export const DEFAULT_AIM_ANGLE_U16 = 32_768 as const;
@@ -20,6 +21,7 @@ export const ENEMY_FLAG_ETHEREAL = 0b10_0000 as const;
 export type BattleFlowState =
   | 'idle'
   | 'loading'
+  | 'preparing'
   | 'running'
   | 'paused'
   | 'offer-pending'
@@ -57,13 +59,16 @@ export type BattleMode = 'fixed' | 'endless';
 export type BattleOutcome = 'victory' | 'defeat' | 'settled';
 export type EndlessPhase = 'survival' | 'boss' | 'settled';
 export type EndlessSettlementReason = 'time-limit' | 'breach' | 'manual';
-export type TowerId = 0 | 1 | 2;
-export type TowerAimAnglesU16 = [number, number, number];
+export type TowerId = 0 | 1 | 2 | 3;
+export type TowerAimAnglesU16 = number[];
 
 export interface RouteDefinition {
   id: string;
   points: Point[];
-  towerAnchors: [Point, Point, Point];
+  /** Optional protected ingress distance. Enemies cannot be targeted or damaged before crossing it. */
+  combatStartDistancePx?: number;
+  /** Authored defaults. Fixed stages provide four slots; Stage 08 keeps three. */
+  towerAnchors: Point[];
   breachPoint: Point;
 }
 
@@ -211,9 +216,9 @@ export interface BattleBundleV1 {
     overdriveDurationTicks?: number;
     /** Towers deployed when a fixed-stage run starts. Endless stages keep all towers active. */
     initialActiveTowerIds?: TowerId[];
-    /** Run-local war-point price for deploying the remaining fixed-stage tower. */
+    /** Run-local war-point price for deploying each additional fixed-stage tower. */
     towerBuildCost?: number;
-    /** Fully cleared waves required before the reinforcement tower can be purchased. */
+    /** Legacy/authored gate for tower 3. Dynamic tower 4 always unlocks after wave 4. */
     towerUnlockCompletedWaves?: number;
     /** Maximum fixed-stage shop purchases during one wave. */
     shopPurchaseLimitPerWave?: number;
@@ -223,6 +228,9 @@ export interface BattleBundleV1 {
 export type BattleCommand =
   | { seq: number; type: 'SET_AIM'; towerId: TowerId; angleU16: number }
   | { seq: number; type: 'ACTIVATE_OVERDRIVE'; towerId: TowerId }
+  | { seq: number; type: 'START_WAVE' }
+  | { seq: number; type: 'BUILD_TOWER'; point: Point }
+  | { seq: number; type: 'MOVE_TOWER'; towerId: TowerId; point: Point }
   | { seq: number; type: 'OPEN_SHOP' }
   | { seq: number; type: 'CLOSE_SHOP' }
   | { seq: number; type: 'SET_SPEED'; value: 1 | 2 }
@@ -328,6 +336,22 @@ export type BattleEvent =
       type: 'TOWER_UNLOCKED';
       towerId: TowerId;
       activeTowerCount: number;
+    }
+  | {
+      eventId: string;
+      tick: number;
+      type: 'TOWER_BUILT';
+      towerId: TowerId;
+      point: Point;
+      cost: number;
+      balance: number;
+    }
+  | {
+      eventId: string;
+      tick: number;
+      type: 'TOWER_MOVED';
+      towerId: TowerId;
+      point: Point;
     }
   | { eventId: string; tick: number; type: 'LEVEL_UP'; level: number }
   | {
@@ -457,6 +481,18 @@ export interface TowerRuntimeProjectionV1 {
   preferredEnemiesInRange: number;
 }
 
+export interface TowerBuildProjectionV1 {
+  /** Lowest inactive tower slot, or null after all four towers are deployed. */
+  nextTowerId: TowerId | null;
+  cost: number;
+  requiredCompletedWaves: number;
+  completedWaves: number;
+  unlocked: boolean;
+  affordable: boolean;
+  /** True only while an authoritative BUILD_TOWER command may be attempted. */
+  canBuild: boolean;
+}
+
 export interface EndlessHudProjectionV1 extends EndlessScoreV1 {
   phase: EndlessPhase;
   settlementReason: EndlessSettlementReason | null;
@@ -496,9 +532,20 @@ export interface HudProjectionV1 {
   waveIndex: number;
   waveCount: number;
   progressBp: number;
+  /** Remaining deterministic countdown before a fixed-campaign wave starts. */
+  preparationTicksRemaining: number;
+  /** Total authored preparation duration; zero for modes without wave preparation. */
+  preparationTicksTotal: number;
+  /** One-based wave index currently being previewed, or zero outside preparation. */
+  wavePreviewIndex: number;
   aimAnglesU16: TowerAimAnglesU16;
   activeTowerIds: TowerId[];
+  /** Authoritative run-local position for every authored tower slot. */
+  towerPositions: Point[];
+  towerBuild: TowerBuildProjectionV1;
   shopAvailable: boolean;
+  /** Monotonic authority ordinal for the current or next fixed-campaign quote. */
+  shopOfferOrdinal: number;
   shopPurchasesThisWave: number;
   shopPurchaseLimitPerWave: number;
   shopPurchasedThisWave: boolean;
@@ -510,6 +557,10 @@ export interface HudProjectionV1 {
   towerStats: TowerStatsProjectionV1;
   towerRuntime: TowerRuntimeProjectionV1[];
   endless?: EndlessHudProjectionV1;
+  /** Cached fixed-campaign quote, projected even while the shop overlay is closed. */
+  shopOffer?: OfferGranted;
+  /** Authoritative prices and before/after values for the cached fixed-campaign quote. */
+  shopOfferPreviews?: TowerCardPreviewV1[];
   activeOffer?: OfferGranted;
   offerPreviews?: TowerCardPreviewV1[];
 }

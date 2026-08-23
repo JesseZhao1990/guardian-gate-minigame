@@ -128,7 +128,7 @@ assert.equal(
   stage08ConfigHash,
   `sha256:${createHash('sha256').update(JSON.stringify(stage08HashInput)).digest('hex')}`,
 );
-assert.equal(baseBundle.releaseId, 'GG_S08_ENDLESS_V2');
+assert.equal(baseBundle.releaseId, 'GG_S08_ENDLESS_V3');
 assert.equal(baseBundle.stage.name, '无尽潮渊');
 assert.equal(baseBundle.stage.backgroundAssetId, 'STAGE_08_BACKGROUND');
 assert.equal(baseBundle.mode, 'endless');
@@ -273,7 +273,7 @@ const capCheckpoint = JSON.parse(new TextDecoder().decode(capSimulation.createCh
     };
   };
 };
-assert.equal(capCheckpoint.schemaVersion, 6);
+assert.equal(capCheckpoint.schemaVersion, 7);
 assert.ok(capCheckpoint.state.endless.pendingPacks.every((pack) => pack.units.length <= 32));
 assert.equal(
   createBattleSimulation(
@@ -727,7 +727,7 @@ const projectileBoundaryCheckpoint = JSON.parse(
 const sequenceRemainingTicks = projectileProbeBundle.endless!.settlementTick -
   projectileBoundaryCheckpoint.state.tick;
 projectileBoundaryCheckpoint.state.nextProjectileId =
-  0x7fff_ffff - sequenceRemainingTicks * 27;
+  0x7fff_ffff - sequenceRemainingTicks * 36;
 const projectileBoundarySimulation = createBattleSimulation(
   projectileProbeBundle,
   seed + 4,
@@ -737,7 +737,7 @@ assert.ok(
   projectileBoundarySimulation
     .advanceTicks(2)
     .events.some((event) => event.type === 'ATTACK_RELEASE'),
-  'The exact 27-projectile reserve boundary must execute one firing step.',
+  'The exact four-tower projectile reserve boundary must execute one firing step.',
 );
 createBattleSimulation(
   projectileProbeBundle,
@@ -1387,6 +1387,10 @@ assert.equal(
 const finiteBundle = createStage01Bundle();
 const finiteSeed = 0x1020_3040;
 const finiteSimulation = createBattleSimulation(finiteBundle, finiteSeed);
+assert.equal(
+  finiteSimulation.applyCommand({ seq: 1, type: 'START_WAVE' }).commandAcks[0]?.status,
+  'applied',
+);
 finiteSimulation.advanceTicks(20);
 const finiteV5 = JSON.parse(new TextDecoder().decode(finiteSimulation.createCheckpoint())) as {
   schemaVersion: number;
@@ -1407,7 +1411,7 @@ const finiteV5 = JSON.parse(new TextDecoder().decode(finiteSimulation.createChec
     };
   };
 };
-assert.equal(finiteV5.schemaVersion, 6);
+assert.equal(finiteV5.schemaVersion, 7);
 const exhaustedFixedTickCheckpoint = JSON.parse(JSON.stringify(finiteV5)) as typeof finiteV5;
 exhaustedFixedTickCheckpoint.state.tick = Number.MAX_SAFE_INTEGER;
 exhaustedFixedTickCheckpoint.state.scheduler.nextSpawnTick = Number.MAX_SAFE_INTEGER;
@@ -1446,7 +1450,7 @@ const pausedFixedSimulation = createBattleSimulation(
   finiteSeed,
   new TextEncoder().encode(JSON.stringify(finiteV5)),
 );
-pausedFixedSimulation.applyCommand({ seq: 1, type: 'PAUSE' });
+pausedFixedSimulation.applyCommand({ seq: 2, type: 'PAUSE' });
 assert.equal(
   createBattleSimulation(
     finiteBundle,
@@ -1492,6 +1496,24 @@ expectThrow(
 );
 const finiteV4 = JSON.parse(JSON.stringify(finiteV5)) as typeof finiteV5;
 finiteV4.schemaVersion = 4;
+(finiteV4.state.aimAnglesU16 as number[]).pop();
+(finiteV4.state.towerCooldowns as number[]).pop();
+delete finiteV4.state.towerPositions;
+delete finiteV4.state.preparationTicksRemaining;
+for (const field of [
+  'warPointsBalance',
+  'warPointsEarned',
+  'activeTowerIds',
+  'shopOfferOrdinal',
+  'shopOfferWaveIndex',
+  'shopPurchasedWaveIndex',
+  'shopPurchasesInWave',
+  'shopReturnFlowState',
+  'waveBaseWarPoints',
+  'waveFocusedKills',
+  'waveFocusBonusAwarded',
+  'waveBreached',
+]) delete finiteV4.state[field];
 delete finiteV4.state.gateIntegrity;
 delete finiteV4.state.overdriveCharge;
 delete finiteV4.state.overdriveTowerId;
@@ -1527,7 +1549,10 @@ const restoredV2 = createBattleSimulation(
   finiteSeed,
   new TextEncoder().encode(JSON.stringify(finiteV2)),
 );
-assert.deepEqual(restoredV2.getHudProjection().aimAnglesU16, [54_321, 54_321, 54_321]);
+assert.deepEqual(
+  restoredV2.getHudProjection().aimAnglesU16,
+  [54_321, 54_321, 54_321, 32_768],
+);
 for (const finiteCheckpoint of [finiteV5, finiteV4, finiteV3, finiteV2]) {
   const missingWaveCheckpoint = JSON.parse(
     JSON.stringify(finiteCheckpoint),
@@ -1584,5 +1609,5 @@ for (let index = 0; index < 30; index += 1) {
 console.log('✓ Stage 08 三路线与 1201 项威胁 LUT 固化通过');
 console.log('✓ 450/24 tick 威胁包、三次小首领、120 active 上限与排队通过');
 console.log('✓ 36000 Boss 切换、450 tick 飞行召唤、分层与实际伤害计分通过');
-console.log('✓ 45000/manual 结算、无 VICTORY、checkpoint V6 与 finite V2/V3/V4/V5 兼容通过');
+console.log('✓ 45000/manual 结算、无 VICTORY、checkpoint V7 与 finite V2–V6 兼容通过');
 console.log(`✓ 30 seeds 满清怪 20 分钟等级区间 ${Math.min(...levelMatrix)}–${Math.max(...levelMatrix)} 通过`);

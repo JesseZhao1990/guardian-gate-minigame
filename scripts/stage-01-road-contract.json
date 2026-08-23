@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 2,
+  "stageId": "STAGE_01",
+  "background": {
+    "assetPath": "assets/stage-01/background/STAGE_01_BACKGROUND.jpg",
+    "sha256": "ecae98ccad24a59c4b4259e2c591e7c3ca7cc5452cf2a47b2892c500985b9c8b",
+    "width": 3200,
+    "height": 1440,
+    "worldRect": {
+      "x": -640,
+      "y": -60,
+      "width": 3200,
+      "height": 1440
+    }
+  },
+  "visibleRoadCorridor": [
+    { "routePointIndex": 0, "assetX": 2530, "assetY": 280, "toleranceX": 24, "toleranceY": 24 },
+    { "routePointIndex": 1, "assetX": 2480, "assetY": 300, "toleranceX": 24, "toleranceY": 24 },
+    { "routePointIndex": 2, "assetX": 2300, "assetY": 380, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 3, "assetX": 2140, "assetY": 460, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 4, "assetX": 1960, "assetY": 560, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 5, "assetX": 1820, "assetY": 680, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 6, "assetX": 1900, "assetY": 800, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 7, "assetX": 1880, "assetY": 900, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 8, "assetX": 1980, "assetY": 1020, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 9, "assetX": 1970, "assetY": 1120, "toleranceX": 32, "toleranceY": 32 },
+    { "routePointIndex": 10, "assetX": 1880, "assetY": 1240, "toleranceX": 32, "toleranceY": 32 }
+  ],
+  "roadCenterline": {
+    "maxDeviationPx": 48,
+    "sampleStepPx": 8,
+    "points": [
+      { "x": 2530, "y": 280 },
+      { "x": 2480, "y": 300 },
+      { "x": 2300, "y": 380 },
+      { "x": 2140, "y": 460 },
+      { "x": 1960, "y": 560 },
+      { "x": 1820, "y": 680 },
+      { "x": 1900, "y": 800 },
+      { "x": 1880, "y": 900 },
+      { "x": 1980, "y": 1020 },
+      { "x": 1970, "y": 1120 },
+      { "x": 1880, "y": 1240 }
+    ]
+  }
+}
