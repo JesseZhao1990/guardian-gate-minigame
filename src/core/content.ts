@@ -11,21 +11,21 @@ import type {
 import { BATTLE_STAGE_ORDER } from './contracts';
 
 const STAGE_01_RELEASE_ID = 'GG_S01_ALPHA_V6';
-const STAGE_01_CONFIG_HASH = 'sha256:3d59cec7f433b1dc811942ff348b2e385913ee44221bd19b704caf280607db48';
+const STAGE_01_CONFIG_HASH = 'sha256:b8f02253ba3c5746000f1d618e2932b24d00d6eae95d984bc8a9ce6f6aa310a2';
 const STAGE_02_RELEASE_ID = 'GG_S02_ALPHA_V5';
-const STAGE_02_CONFIG_HASH = 'sha256:12d48cb073fbb14c85f3163300c87f652444d23d48719422b9513d4f5ca0c44a';
+const STAGE_02_CONFIG_HASH = 'sha256:df05910ff3e802be41b8b23acd14ffb55c76c9a1643f75c930f55339e0229bd1';
 const STAGE_03_RELEASE_ID = 'GG_S03_ALPHA_V4';
-const STAGE_03_CONFIG_HASH = 'sha256:29efd9baedbac7aa38253a3055b51b252cae8c082c41f2770a452e10eb52b7ab';
+const STAGE_03_CONFIG_HASH = 'sha256:55b77f5812052ff2c94547782853a305b4d45048dba57c801f36ed5dbc7e6988';
 const STAGE_04_RELEASE_ID = 'GG_S04_ALPHA_V4';
-const STAGE_04_CONFIG_HASH = 'sha256:4642979e9f4f02c1fba0a8f2e012fdadba4f8c110865f857f0b4c066b1ec1e60';
+const STAGE_04_CONFIG_HASH = 'sha256:c413d33b5eadecab1a1b49a1bedb16ff4a258d8f2a203dc8a99ce9cf3a578155';
 const STAGE_05_RELEASE_ID = 'GG_S05_ALPHA_V4';
-const STAGE_05_CONFIG_HASH = 'sha256:381cf0b630eae3e1c2d3fcee72893f4c6767933821902b3bd8e9659983719438';
+const STAGE_05_CONFIG_HASH = 'sha256:8125f10cd0bdaddcd1a3ca20fb494c90d3263090a634a9daef8fc617319011ed';
 const STAGE_06_RELEASE_ID = 'GG_S06_ALPHA_V3';
-const STAGE_06_CONFIG_HASH = 'sha256:c7461b29ea3895e12143dac5705c2dfddc7276ef9e4b45cfc8142c6c812c081d';
+const STAGE_06_CONFIG_HASH = 'sha256:03b45593a917bcb09d097f6176c16c1c8eaee15ede55fa9c542f5621009e0cc9';
 const STAGE_07_RELEASE_ID = 'GG_S07_ALPHA_V3';
-const STAGE_07_CONFIG_HASH = 'sha256:0b4fb97ffde99bfe98b9f74252f0d1f75295e4139ac37f7dd0c4fb9c3af2a762';
+const STAGE_07_CONFIG_HASH = 'sha256:1e11f76214a9d9e015859f0564d06ad7516d7d523c139d075db13bd0e2447895';
 const STAGE_08_RELEASE_ID = 'GG_S08_ENDLESS_V3';
-const STAGE_08_CONFIG_HASH = 'sha256:6c0beb2d0aa1e7c137aeae931d3cf3f7cd0ea0597ac07947214510501e58cc3e';
+const STAGE_08_CONFIG_HASH = 'sha256:8cb19634e7c4a3e23915c611ef061e164d6098cc51dc6bcc7c589fb2c15fd618';
 
 // Quantized offline from: 1 + 0.11 * minute + 0.018 * minute^1.35.
 // Index is elapsed whole seconds (0...1200); battle ticks only perform integer lookup.
@@ -144,20 +144,28 @@ const stage01RoutePoints: Point[] = [
   { x: 1500, y: 400 },
   { x: 1320, y: 500 },
   { x: 1180, y: 620 },
-  { x: 1260, y: 740 },
-  { x: 1240, y: 840 },
-  { x: 1340, y: 960 },
-  { x: 1330, y: 1060 },
-  { x: 1240, y: 1180 },
+  { x: 1120, y: 680 },
+  { x: 1110, y: 720 },
+  { x: 1110, y: 780 },
+  { x: 1210, y: 840 },
+  { x: 1330, y: 870 },
+  { x: 1400, y: 930 },
+  { x: 1410, y: 990 },
+  { x: 1380, y: 1050 },
+  { x: 1330, y: 1110 },
+  { x: 1250, y: 1150 },
+  { x: 1180, y: 1170 },
+  { x: 1120, y: 1180 },
+  { x: 1080, y: 1200 },
+  { x: 1050, y: 1220 },
+  { x: 960, y: 1290 },
 ];
 
 const stage01TowerAnchors: Point[] = [
-  { x: 1216, y: 320 },
-  // Keep tower 2 on the right shoulder so the road itself does not detour
-  // through grass to satisfy the authoritative 170px route clearance.
-  { x: 1504, y: 832 },
-  { x: 1728, y: 608 },
-  { x: 992, y: 480 },
+  { x: 1216, y: 256 },
+  { x: 1600, y: 768 },
+  { x: 1792, y: 512 },
+  { x: 928, y: 480 },
 ];
 
 const enemies: Record<string, EnemyDefinition> = {
@@ -734,21 +742,46 @@ const campaignCards: CardDefinition[] = [
 
 const stage02RoutePoints: Point[] = [
   { x: 720, y: -70 },
-  { x: 760, y: 100 },
-  { x: 920, y: 240 },
-  { x: 770, y: 390 },
-  { x: 980, y: 540 },
-  { x: 780, y: 690 },
-  { x: 930, y: 840 },
-  { x: 700, y: 990 },
-  { x: 620, y: 1150 },
+  { x: 750, y: -10 },
+  { x: 760, y: 20 },
+  { x: 800, y: 80 },
+  { x: 880, y: 140 },
+  { x: 930, y: 180 },
+  { x: 950, y: 220 },
+  { x: 950, y: 250 },
+  { x: 930, y: 270 },
+  { x: 870, y: 310 },
+  { x: 800, y: 350 },
+  { x: 740, y: 390 },
+  { x: 720, y: 430 },
+  { x: 730, y: 470 },
+  { x: 770, y: 510 },
+  { x: 860, y: 550 },
+  { x: 930, y: 580 },
+  { x: 990, y: 620 },
+  { x: 1030, y: 660 },
+  { x: 1050, y: 700 },
+  { x: 1050, y: 740 },
+  { x: 1050, y: 780 },
+  { x: 1040, y: 820 },
+  { x: 1010, y: 860 },
+  { x: 990, y: 890 },
+  { x: 960, y: 930 },
+  { x: 940, y: 970 },
+  { x: 910, y: 1010 },
+  { x: 880, y: 1050 },
+  { x: 850, y: 1090 },
+  { x: 820, y: 1130 },
+  { x: 790, y: 1170 },
+  { x: 770, y: 1180 },
+  { x: 680, y: 1248 },
 ];
 
 const stage02TowerAnchors: Point[] = [
-  { x: 1100, y: 245 },
-  { x: 1160, y: 540 },
-  { x: 1050, y: 880 },
-  { x: 576, y: 800 },
+  { x: 1248, y: 224 },
+  { x: 1344, y: 608 },
+  { x: 1376, y: 960 },
+  { x: 480, y: 960 },
 ];
 
 const stage02Waves: WaveDefinition[] = [
@@ -801,7 +834,7 @@ const stage02Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N02_05',
     index: 5,
-    hpMultiplierBp: 42_000,
+    hpMultiplierBp: 41_000,
     expMultiplierBp: 6_600,
     speedMultiplierBp: 14_500,
     groups: [
@@ -815,22 +848,44 @@ const stage02Waves: WaveDefinition[] = [
 ];
 
 const stage03RoutePoints: Point[] = [
-  { x: 650, y: -70 },
-  { x: 650, y: 135 },
-  { x: 820, y: 255 },
-  { x: 1130, y: 330 },
-  { x: 1260, y: 480 },
-  { x: 1120, y: 610 },
-  { x: 780, y: 700 },
-  { x: 840, y: 850 },
-  { x: 1230, y: 930 },
+  { x: 990, y: -70 },
+  { x: 990, y: -20 },
+  { x: 930, y: 10 },
+  { x: 870, y: 50 },
+  { x: 820, y: 80 },
+  { x: 770, y: 120 },
+  { x: 740, y: 160 },
+  { x: 710, y: 200 },
+  { x: 700, y: 240 },
+  { x: 700, y: 280 },
+  // Nudge this short bend within the painted road so the unchanged first
+  // tower keeps the authored 170px route clearance.
+  { x: 800, y: 300 },
+  { x: 880, y: 340 },
+  { x: 970, y: 390 },
+  { x: 1080, y: 430 },
+  { x: 1130, y: 470 },
+  { x: 1110, y: 510 },
+  { x: 1070, y: 550 },
+  { x: 970, y: 590 },
+  { x: 880, y: 630 },
+  { x: 830, y: 670 },
+  { x: 790, y: 700 },
+  { x: 760, y: 740 },
+  { x: 770, y: 760 },
+  { x: 890, y: 780 },
+  { x: 1040, y: 800 },
+  { x: 1090, y: 820 },
+  { x: 1130, y: 840 },
+  { x: 1180, y: 860 },
+  { x: 1250, y: 885 },
 ];
 
 const stage03TowerAnchors: Point[] = [
-  { x: 1060, y: 190 },
-  { x: 510, y: 470 },
-  { x: 1390, y: 660 },
-  { x: 832, y: 1056 },
+  { x: 768, y: 480 },
+  { x: 480, y: 160 },
+  { x: 1408, y: 160 },
+  { x: 1504, y: 768 },
 ];
 
 const stage03Waves: WaveDefinition[] = [
@@ -887,7 +942,7 @@ const stage03Waves: WaveDefinition[] = [
   {
     id: 'WAVE_N03_05',
     index: 5,
-    hpMultiplierBp: 59_800,
+    hpMultiplierBp: 64_100,
     expMultiplierBp: 7_200,
     speedMultiplierBp: 14_200,
     groups: [
@@ -916,10 +971,10 @@ const stage04RoutePoints: Point[] = [
 ];
 
 const stage04TowerAnchors: Point[] = [
-  { x: 600, y: 260 },
-  { x: 1710, y: 450 },
-  { x: 1300, y: 800 },
-  { x: 1152, y: 160 },
+  { x: 1696, y: 416 },
+  { x: 544, y: 448 },
+  { x: 416, y: 864 },
+  { x: 1472, y: 1056 },
 ];
 
 const stage04Waves: WaveDefinition[] = [
@@ -1009,10 +1064,10 @@ const stage05RoutePoints: Point[] = [
 ];
 
 const stage05TowerAnchors: Point[] = [
-  { x: 570, y: 355 },
-  { x: 1382, y: 354 },
-  { x: 463, y: 620 },
+  { x: 1440, y: 320 },
+  { x: 736, y: 192 },
   { x: 1152, y: 608 },
+  { x: 256, y: 608 },
 ];
 
 const stage05Waves: WaveDefinition[] = [
@@ -1103,10 +1158,10 @@ const stage06RoutePoints: Point[] = [
 ];
 
 const stage06TowerAnchors: Point[] = [
-  { x: 650, y: 292 },
-  { x: 1348, y: 292 },
-  { x: 978, y: 805 },
-  { x: 1472, y: 928 },
+  { x: 384, y: 288 },
+  { x: 800, y: 608 },
+  { x: 1728, y: 448 },
+  { x: 1536, y: 256 },
 ];
 
 const stage06Waves: WaveDefinition[] = [
@@ -1198,10 +1253,10 @@ const stage07RoutePoints: Point[] = [
 ];
 
 const stage07TowerAnchors: Point[] = [
-  { x: 589, y: 287 },
-  { x: 1406, y: 312 },
-  { x: 1034, y: 808 },
-  { x: 320, y: 672 },
+  { x: 1408, y: 352 },
+  { x: 1760, y: 832 },
+  { x: 800, y: 864 },
+  { x: 352, y: 704 },
 ];
 
 const stage07Waves: WaveDefinition[] = [
@@ -1275,9 +1330,9 @@ const stage07Waves: WaveDefinition[] = [
 ];
 
 const stage08TowerAnchors: [Point, Point, Point] = [
-  { x: 720, y: 420 },
-  { x: 1080, y: 570 },
-  { x: 1350, y: 680 },
+  { x: 800, y: 352 },
+  { x: 1088, y: 384 },
+  { x: 1440, y: 480 },
 ];
 
 const stage08Routes: [RouteDefinition, RouteDefinition, RouteDefinition] = [
@@ -1363,7 +1418,7 @@ const stage01SourceBundle: BattleBundleV1 = {
     points: stage01RoutePoints,
     combatStartDistancePx: 420,
     towerAnchors: stage01TowerAnchors,
-    breachPoint: stage01RoutePoints[stage01RoutePoints.length - 1] ?? { x: 680, y: 1140 },
+    breachPoint: stage01RoutePoints[stage01RoutePoints.length - 1] ?? { x: 960, y: 1290 },
   },
   tower: {
     baseDamageMilli: 32_000,
@@ -1415,7 +1470,7 @@ const stage02SourceBundle: BattleBundleV1 = {
     id: 'ROUTE_STAGE_02_REEF',
     points: stage02RoutePoints,
     towerAnchors: stage02TowerAnchors,
-    breachPoint: stage02RoutePoints[stage02RoutePoints.length - 1] ?? { x: 620, y: 1150 },
+    breachPoint: stage02RoutePoints[stage02RoutePoints.length - 1] ?? { x: 680, y: 1248 },
   },
   tower: {
     baseDamageMilli: 32_000,
@@ -1467,7 +1522,7 @@ const stage03SourceBundle: BattleBundleV1 = {
     id: 'ROUTE_STAGE_03_DRAGON_GATE',
     points: stage03RoutePoints,
     towerAnchors: stage03TowerAnchors,
-    breachPoint: stage03RoutePoints[stage03RoutePoints.length - 1] ?? { x: 1230, y: 930 },
+    breachPoint: stage03RoutePoints[stage03RoutePoints.length - 1] ?? { x: 1250, y: 885 },
   },
   tower: {
     baseDamageMilli: 32_000,
@@ -1493,7 +1548,7 @@ const stage03SourceBundle: BattleBundleV1 = {
     overdriveDurationTicks: 150,
     arrowCountCap: 6,
     penetrationCap: 4,
-    volleyDamageFalloffBp: 1_000,
+    volleyDamageFalloffBp: 2_000,
     groupGapTicks: 10,
     waveGapTicks: 40,
     reviveGuardTicks: 60,
@@ -1626,7 +1681,7 @@ const stage06SourceBundle: BattleBundleV1 = {
     breachPoint: stage06RoutePoints[stage06RoutePoints.length - 1] ?? { x: 980, y: 1120 },
   },
   tower: {
-    baseDamageMilli: 32_000,
+    baseDamageMilli: 31_950,
     attackIntervalTicks: 24,
     rangePx: 750,
     aimHalfAngleU16: 10_923,
@@ -1726,7 +1781,7 @@ const stage08SourceBundle: BattleBundleV1 = {
   },
   route: stage08Routes[0],
   tower: {
-    baseDamageMilli: 24_000,
+    baseDamageMilli: 24_720,
     attackIntervalTicks: 24,
     rangePx: 750,
     aimHalfAngleU16: 10_923,

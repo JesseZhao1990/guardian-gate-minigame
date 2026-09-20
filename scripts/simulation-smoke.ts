@@ -48,6 +48,7 @@ import {
   BREACH_SEAL_VISUAL_RADIUS,
   projectBattleWorldPoint,
   resolveBreachSealPlacement,
+  resolveBreachSealVisualExtents,
   resolveCanvasFontWeight,
   resolveCardOverlayContentLayout,
   resolveCardOverlayLayout,
@@ -893,9 +894,9 @@ const fixedStageBundles = [
 const stage08EndlessRoutes = STAGE_BUNDLES.STAGE_08.endless?.routes ?? [];
 assert.equal(stage08EndlessRoutes.length, 3);
 assert.deepEqual(stage08EndlessRoutes[0]?.towerAnchors, [
-  { x: 720, y: 420 },
-  { x: 1080, y: 570 },
-  { x: 1350, y: 680 },
+  { x: 800, y: 352 },
+  { x: 1088, y: 384 },
+  { x: 1440, y: 480 },
 ]);
 assert.deepEqual(
   stage08EndlessRoutes.map((route) => ({
@@ -918,12 +919,16 @@ const breachRoutes = [
 ];
 const breachSealPlacements = breachRoutes.map(({ route }) => resolveBreachSealPlacement(route));
 const projectedBreachSealPlacements = breachSealPlacements.map(projectBattleWorldPoint);
+const breachSealVisualExtents = breachRoutes.map(({ route }) => resolveBreachSealVisualExtents(route));
 const projectedSealRadius = BREACH_SEAL_VISUAL_RADIUS * BATTLE_WORLD_SCALE;
 const projectedTowerRadius = 112 * BATTLE_WORLD_SCALE;
 for (const [index, placement] of breachSealPlacements.entries()) {
   const routeCase = breachRoutes[index];
   const projected = projectedBreachSealPlacements[index];
-  assert.ok(routeCase && projected);
+  const visualExtents = breachSealVisualExtents[index];
+  assert.ok(routeCase && projected && visualExtents);
+  const projectedSealTop = visualExtents.top * BATTLE_WORLD_SCALE;
+  const projectedSealBottom = visualExtents.bottom * BATTLE_WORLD_SCALE;
   assert.ok(Number.isFinite(placement.x));
   assert.ok(Number.isFinite(placement.y));
   assert.ok(Number.isFinite(placement.tangentRadians));
@@ -931,12 +936,12 @@ for (const [index, placement] of breachSealPlacements.entries()) {
   assert.deepEqual(routeCase.route.points[routeCase.route.points.length - 1], routeCase.route.breachPoint);
   assert.ok(projected.x - projectedSealRadius >= 0);
   assert.ok(projected.x + projectedSealRadius <= 1_920);
-  assert.ok(projected.y - projectedSealRadius >= 0);
-  assert.ok(projected.y + projectedSealRadius <= 1_080);
+  assert.ok(projected.y - projectedSealTop >= 0);
+  assert.ok(projected.y + projectedSealBottom <= 1_080);
   const roundTrip = unprojectBattleWorldPoint(projected);
   assert.ok(Math.abs(roundTrip.x - placement.x) < .000_001);
   assert.ok(Math.abs(roundTrip.y - placement.y) < .000_001);
-  if (projected.y + projectedSealRadius > BATTLE_BOTTOM_HUD_TOP) {
+  if (projected.y + projectedSealBottom > BATTLE_BOTTOM_HUD_TOP) {
     assert.ok(
       projected.x - projectedSealRadius >= BATTLE_BOTTOM_HUD_LEFT_RIGHT + 8 &&
       projected.x + projectedSealRadius <= BATTLE_BOTTOM_HUD_RIGHT_LEFT - 8,
@@ -1325,6 +1330,15 @@ assert.deepEqual(
 
 function auraProbeBundle(enabled: boolean): BattleBundleV1 {
   const bundle = createStage05Bundle();
+  // Keep this combat-rule probe independent from the authored map-platform layout.
+  // Projectile travel timing must remain stable so the first hit exercises an
+  // already-established guard aura instead of whichever tower pad is nearest.
+  bundle.route.towerAnchors = [
+    { x: 570, y: 355 },
+    { x: 1382, y: 354 },
+    { x: 463, y: 620 },
+    { x: 1152, y: 608 },
+  ];
   const firstWave = bundle.waves[0];
   const priest = bundle.enemies.MON_SOLAR_FORMATION_PRIEST;
   if (!firstWave || !priest) throw new Error('Stage 05 aura probe requires its first wave and priest.');
@@ -1511,7 +1525,10 @@ for (const waveIndex of [0, 1, 2, 3, 4]) {
   const towerAttacks = stage06Distribution.attacksByWave[waveIndex] ?? [];
   const activeTowerAttacks = towerAttacks.filter((count) => count > 0);
   if (waveIndex < 2) assert.equal(towerAttacks[2], 0);
-  assert.ok(activeTowerAttacks.length >= 2);
+  assert.ok(
+    activeTowerAttacks.length >= 2,
+    `Stage 06 wave ${waveIndex + 1} active tower count ${JSON.stringify(towerAttacks)}`,
+  );
   const minimumAttacks = waveIndex === 0 ? 8 : 10;
   assert.ok(
     activeTowerAttacks.every((count) => count >= minimumAttacks),

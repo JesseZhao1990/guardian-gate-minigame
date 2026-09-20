@@ -1,0 +1,1707 @@
+{
+  "schemaVersion": 1,
+  "status": "generated-from-runtime",
+  "generatedAt": "2026-09-01T15:20:36.956Z",
+  "generatedAssetVersion": "2026-09-01-v4",
+  "mapping": {
+    "worldToBackground": {
+      "x": "+640",
+      "y": "+60"
+    },
+    "backgroundSize": [
+      3200,
+      1440
+    ],
+    "visible16x9": [
+      320,
+      0,
+      2880,
+      1440
+    ]
+  },
+  "stages": [
+    {
+      "stageId": "STAGE_01",
+      "name": "关外练兵场",
+      "file": "stage-01-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "eb76527758698badb680709b12331c4e89d2cd855b77c763e10919727682c05b"
+      },
+      "background": "assets/stage-01/background/STAGE_01_BACKGROUND.jpg",
+      "currentTowerCount": 4,
+      "reservePlatformCount": 1,
+      "physicalPlatformCount": 5,
+      "plannedMaximumActiveTowers": 4,
+      "routeCount": 1,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_01",
+          "label": "怪物路线",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": 1890,
+              "y": 220
+            },
+            {
+              "x": 1840,
+              "y": 240
+            },
+            {
+              "x": 1660,
+              "y": 320
+            },
+            {
+              "x": 1500,
+              "y": 400
+            },
+            {
+              "x": 1320,
+              "y": 500
+            },
+            {
+              "x": 1180,
+              "y": 620
+            },
+            {
+              "x": 1120,
+              "y": 680
+            },
+            {
+              "x": 1110,
+              "y": 720
+            },
+            {
+              "x": 1110,
+              "y": 780
+            },
+            {
+              "x": 1210,
+              "y": 840
+            },
+            {
+              "x": 1330,
+              "y": 870
+            },
+            {
+              "x": 1400,
+              "y": 930
+            },
+            {
+              "x": 1410,
+              "y": 990
+            },
+            {
+              "x": 1380,
+              "y": 1050
+            },
+            {
+              "x": 1330,
+              "y": 1110
+            },
+            {
+              "x": 1250,
+              "y": 1150
+            },
+            {
+              "x": 1180,
+              "y": 1170
+            },
+            {
+              "x": 1120,
+              "y": 1180
+            },
+            {
+              "x": 1080,
+              "y": 1200
+            },
+            {
+              "x": 1050,
+              "y": 1220
+            },
+            {
+              "x": 960,
+              "y": 1290
+            }
+          ],
+          "entryPoint": {
+            "x": 1890,
+            "y": 220
+          },
+          "breachPoint": {
+            "x": 960,
+            "y": 1290
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 1216,
+            "y": 256
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 1792,
+            "y": 512
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 928,
+            "y": 480
+          },
+          "marker": "塔4",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 1600,
+            "y": 768
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 928,
+            "y": 896
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_02",
+      "name": "东海礁港",
+      "file": "stage-02-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "aa6598c6c1dab4e30a6560f6796ab50904665d52d2650d548d689a0ec16c9ae6"
+      },
+      "background": "assets/stage-02/background/STAGE_02_BACKGROUND.jpg",
+      "currentTowerCount": 4,
+      "reservePlatformCount": 2,
+      "physicalPlatformCount": 6,
+      "plannedMaximumActiveTowers": 4,
+      "routeCount": 1,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_02_REEF",
+          "label": "怪物路线",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": 720,
+              "y": -70
+            },
+            {
+              "x": 750,
+              "y": -10
+            },
+            {
+              "x": 760,
+              "y": 20
+            },
+            {
+              "x": 800,
+              "y": 80
+            },
+            {
+              "x": 880,
+              "y": 140
+            },
+            {
+              "x": 930,
+              "y": 180
+            },
+            {
+              "x": 950,
+              "y": 220
+            },
+            {
+              "x": 950,
+              "y": 250
+            },
+            {
+              "x": 930,
+              "y": 270
+            },
+            {
+              "x": 870,
+              "y": 310
+            },
+            {
+              "x": 800,
+              "y": 350
+            },
+            {
+              "x": 740,
+              "y": 390
+            },
+            {
+              "x": 720,
+              "y": 430
+            },
+            {
+              "x": 730,
+              "y": 470
+            },
+            {
+              "x": 770,
+              "y": 510
+            },
+            {
+              "x": 860,
+              "y": 550
+            },
+            {
+              "x": 930,
+              "y": 580
+            },
+            {
+              "x": 990,
+              "y": 620
+            },
+            {
+              "x": 1030,
+              "y": 660
+            },
+            {
+              "x": 1050,
+              "y": 700
+            },
+            {
+              "x": 1050,
+              "y": 740
+            },
+            {
+              "x": 1050,
+              "y": 780
+            },
+            {
+              "x": 1040,
+              "y": 820
+            },
+            {
+              "x": 1010,
+              "y": 860
+            },
+            {
+              "x": 990,
+              "y": 890
+            },
+            {
+              "x": 960,
+              "y": 930
+            },
+            {
+              "x": 940,
+              "y": 970
+            },
+            {
+              "x": 910,
+              "y": 1010
+            },
+            {
+              "x": 880,
+              "y": 1050
+            },
+            {
+              "x": 850,
+              "y": 1090
+            },
+            {
+              "x": 820,
+              "y": 1130
+            },
+            {
+              "x": 790,
+              "y": 1170
+            },
+            {
+              "x": 770,
+              "y": 1180
+            },
+            {
+              "x": 680,
+              "y": 1248
+            }
+          ],
+          "entryPoint": {
+            "x": 720,
+            "y": -70
+          },
+          "breachPoint": {
+            "x": 680,
+            "y": 1248
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 416,
+            "y": 224
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 1248,
+            "y": 224
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 480,
+            "y": 576
+          },
+          "marker": "预2",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 1344,
+            "y": 608
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 480,
+            "y": 960
+          },
+          "marker": "塔4",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T6",
+          "point": {
+            "x": 1376,
+            "y": 960
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_03",
+      "name": "镇海龙门",
+      "file": "stage-03-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "c6c0944c33487f732c39836216f13a0278fa15c302ed85af953d47a48dae5e5f"
+      },
+      "background": "assets/stage-03/background/STAGE_03_BACKGROUND.jpg",
+      "currentTowerCount": 4,
+      "reservePlatformCount": 2,
+      "physicalPlatformCount": 6,
+      "plannedMaximumActiveTowers": 4,
+      "routeCount": 1,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_03_DRAGON_GATE",
+          "label": "怪物路线",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": 990,
+              "y": -70
+            },
+            {
+              "x": 990,
+              "y": -20
+            },
+            {
+              "x": 930,
+              "y": 10
+            },
+            {
+              "x": 870,
+              "y": 50
+            },
+            {
+              "x": 820,
+              "y": 80
+            },
+            {
+              "x": 770,
+              "y": 120
+            },
+            {
+              "x": 740,
+              "y": 160
+            },
+            {
+              "x": 710,
+              "y": 200
+            },
+            {
+              "x": 700,
+              "y": 240
+            },
+            {
+              "x": 700,
+              "y": 280
+            },
+            {
+              "x": 800,
+              "y": 300
+            },
+            {
+              "x": 880,
+              "y": 340
+            },
+            {
+              "x": 970,
+              "y": 390
+            },
+            {
+              "x": 1080,
+              "y": 430
+            },
+            {
+              "x": 1130,
+              "y": 470
+            },
+            {
+              "x": 1110,
+              "y": 510
+            },
+            {
+              "x": 1070,
+              "y": 550
+            },
+            {
+              "x": 970,
+              "y": 590
+            },
+            {
+              "x": 880,
+              "y": 630
+            },
+            {
+              "x": 830,
+              "y": 670
+            },
+            {
+              "x": 790,
+              "y": 700
+            },
+            {
+              "x": 760,
+              "y": 740
+            },
+            {
+              "x": 770,
+              "y": 760
+            },
+            {
+              "x": 890,
+              "y": 780
+            },
+            {
+              "x": 1040,
+              "y": 800
+            },
+            {
+              "x": 1090,
+              "y": 820
+            },
+            {
+              "x": 1130,
+              "y": 840
+            },
+            {
+              "x": 1180,
+              "y": 860
+            },
+            {
+              "x": 1250,
+              "y": 885
+            }
+          ],
+          "entryPoint": {
+            "x": 990,
+            "y": -70
+          },
+          "breachPoint": {
+            "x": 1250,
+            "y": 885
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 480,
+            "y": 160
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 1408,
+            "y": 160
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 768,
+            "y": 480
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 1664,
+            "y": 480
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 416,
+            "y": 896
+          },
+          "marker": "预2",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T6",
+          "point": {
+            "x": 1504,
+            "y": 768
+          },
+          "marker": "塔4",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_04",
+      "name": "归墟潮眼",
+      "file": "stage-04-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "e63bd633cadb75a3ba673a2de479948ba3c3651a4a05787bfad0e451595b64b0"
+      },
+      "background": "assets/stage-04/background/STAGE_04_BACKGROUND.jpg",
+      "currentTowerCount": 4,
+      "reservePlatformCount": 2,
+      "physicalPlatformCount": 6,
+      "plannedMaximumActiveTowers": 4,
+      "routeCount": 1,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_04_GUIXU",
+          "label": "怪物路线",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": 1320,
+              "y": -70
+            },
+            {
+              "x": 1370,
+              "y": 100
+            },
+            {
+              "x": 1430,
+              "y": 260
+            },
+            {
+              "x": 1350,
+              "y": 420
+            },
+            {
+              "x": 1190,
+              "y": 520
+            },
+            {
+              "x": 960,
+              "y": 570
+            },
+            {
+              "x": 740,
+              "y": 560
+            },
+            {
+              "x": 620,
+              "y": 690
+            },
+            {
+              "x": 740,
+              "y": 810
+            },
+            {
+              "x": 950,
+              "y": 840
+            },
+            {
+              "x": 1110,
+              "y": 960
+            },
+            {
+              "x": 980,
+              "y": 1140
+            }
+          ],
+          "entryPoint": {
+            "x": 1320,
+            "y": -70
+          },
+          "breachPoint": {
+            "x": 980,
+            "y": 1140
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 544,
+            "y": 448
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 1024,
+            "y": 224
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 1696,
+            "y": 416
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 1216,
+            "y": 736
+          },
+          "marker": "预2",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 1472,
+            "y": 1056
+          },
+          "marker": "塔4",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T6",
+          "point": {
+            "x": 416,
+            "y": 864
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_05",
+      "name": "扶桑天阙",
+      "file": "stage-05-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "e5f45c4bd52f2bb72ab3f274c5dc9e910e515cff85c1c4b48805d6d1d0cfcd60"
+      },
+      "background": "assets/stage-05/background/STAGE_05_BACKGROUND.jpg",
+      "currentTowerCount": 4,
+      "reservePlatformCount": 2,
+      "physicalPlatformCount": 6,
+      "plannedMaximumActiveTowers": 4,
+      "routeCount": 1,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_05_FUSANG",
+          "label": "怪物路线",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": 1120,
+              "y": -70
+            },
+            {
+              "x": 1170,
+              "y": 70
+            },
+            {
+              "x": 1210,
+              "y": 210
+            },
+            {
+              "x": 1160,
+              "y": 340
+            },
+            {
+              "x": 1000,
+              "y": 410
+            },
+            {
+              "x": 810,
+              "y": 400
+            },
+            {
+              "x": 650,
+              "y": 480
+            },
+            {
+              "x": 550,
+              "y": 620
+            },
+            {
+              "x": 620,
+              "y": 750
+            },
+            {
+              "x": 800,
+              "y": 820
+            },
+            {
+              "x": 1020,
+              "y": 800
+            },
+            {
+              "x": 1190,
+              "y": 860
+            },
+            {
+              "x": 1250,
+              "y": 980
+            },
+            {
+              "x": 1090,
+              "y": 1130
+            }
+          ],
+          "entryPoint": {
+            "x": 1120,
+            "y": -70
+          },
+          "breachPoint": {
+            "x": 1090,
+            "y": 1130
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 736,
+            "y": 192
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 48
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 1440,
+            "y": 320
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 256,
+            "y": 608
+          },
+          "marker": "塔4",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 45
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 1152,
+            "y": 608
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 448,
+            "y": 928
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T6",
+          "point": {
+            "x": 1376,
+            "y": 736
+          },
+          "marker": "预2",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_06",
+      "name": "太初蜃庭",
+      "file": "stage-06-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "3fc9ebb53b83731115386d8f0c2912970a7951d85409e41a3745036f13276a7c"
+      },
+      "background": "assets/stage-06/background/STAGE_06_BACKGROUND.jpg",
+      "currentTowerCount": 4,
+      "reservePlatformCount": 2,
+      "physicalPlatformCount": 6,
+      "plannedMaximumActiveTowers": 4,
+      "routeCount": 1,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_06_MIRAGE_COURT",
+          "label": "怪物路线",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": 760,
+              "y": -70
+            },
+            {
+              "x": 690,
+              "y": 70
+            },
+            {
+              "x": 650,
+              "y": 220
+            },
+            {
+              "x": 720,
+              "y": 350
+            },
+            {
+              "x": 900,
+              "y": 410
+            },
+            {
+              "x": 1120,
+              "y": 390
+            },
+            {
+              "x": 1330,
+              "y": 450
+            },
+            {
+              "x": 1450,
+              "y": 580
+            },
+            {
+              "x": 1400,
+              "y": 720
+            },
+            {
+              "x": 1240,
+              "y": 800
+            },
+            {
+              "x": 1040,
+              "y": 780
+            },
+            {
+              "x": 830,
+              "y": 830
+            },
+            {
+              "x": 700,
+              "y": 960
+            },
+            {
+              "x": 830,
+              "y": 1130
+            }
+          ],
+          "entryPoint": {
+            "x": 760,
+            "y": -70
+          },
+          "breachPoint": {
+            "x": 830,
+            "y": 1130
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 384,
+            "y": 288
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 1536,
+            "y": 256
+          },
+          "marker": "塔4",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 800,
+            "y": 608
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 1728,
+            "y": 448
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 52,
+            "y": 72
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 352,
+            "y": 960
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T6",
+          "point": {
+            "x": 1632,
+            "y": 768
+          },
+          "marker": "预2",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_07",
+      "name": "山河残卷",
+      "file": "stage-07-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "93604b2650be3eada1026975be0539aef13f66c902a33d9ebaddc4614313ef47"
+      },
+      "background": "assets/stage-07/background/STAGE_07_BACKGROUND.jpg",
+      "currentTowerCount": 4,
+      "reservePlatformCount": 2,
+      "physicalPlatformCount": 6,
+      "plannedMaximumActiveTowers": 4,
+      "routeCount": 1,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_07_BROKEN_SCROLL",
+          "label": "怪物路线",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": -70,
+              "y": 530
+            },
+            {
+              "x": 120,
+              "y": 510
+            },
+            {
+              "x": 310,
+              "y": 450
+            },
+            {
+              "x": 470,
+              "y": 340
+            },
+            {
+              "x": 650,
+              "y": 300
+            },
+            {
+              "x": 820,
+              "y": 360
+            },
+            {
+              "x": 900,
+              "y": 500
+            },
+            {
+              "x": 1060,
+              "y": 590
+            },
+            {
+              "x": 1280,
+              "y": 540
+            },
+            {
+              "x": 1430,
+              "y": 630
+            },
+            {
+              "x": 1480,
+              "y": 780
+            },
+            {
+              "x": 1400,
+              "y": 930
+            },
+            {
+              "x": 1240,
+              "y": 1020
+            },
+            {
+              "x": 1080,
+              "y": 1080
+            },
+            {
+              "x": 1180,
+              "y": 1140
+            }
+          ],
+          "entryPoint": {
+            "x": -70,
+            "y": 530
+          },
+          "breachPoint": {
+            "x": 1180,
+            "y": 1140
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 960,
+            "y": 192
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 1408,
+            "y": 352
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 1760,
+            "y": 832
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 352,
+            "y": 704
+          },
+          "marker": "塔4",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 672,
+            "y": 544
+          },
+          "marker": "预2",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T6",
+          "point": {
+            "x": 800,
+            "y": 864
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 78,
+            "y": -58
+          }
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_08",
+      "name": "无尽潮渊",
+      "file": "stage-08-deployment-guide.png",
+      "image": {
+        "width": 3200,
+        "height": 1440,
+        "sha256": "8b8240b46484f2622082a74b73ce92558dfa8bda6ad1d633589ec36807886959"
+      },
+      "background": "assets/stage-08/background/STAGE_08_BACKGROUND.jpg",
+      "currentTowerCount": 3,
+      "reservePlatformCount": 5,
+      "physicalPlatformCount": 8,
+      "plannedMaximumActiveTowers": 6,
+      "routeCount": 3,
+      "routes": [
+        {
+          "id": "ROUTE_STAGE_08_ABYSS_A",
+          "label": "路线 A",
+          "color": "#ffd166",
+          "points": [
+            {
+              "x": 300,
+              "y": -70
+            },
+            {
+              "x": 280,
+              "y": 15
+            },
+            {
+              "x": 225,
+              "y": 100
+            },
+            {
+              "x": 195,
+              "y": 205
+            },
+            {
+              "x": 210,
+              "y": 310
+            },
+            {
+              "x": 285,
+              "y": 410
+            },
+            {
+              "x": 405,
+              "y": 505
+            },
+            {
+              "x": 545,
+              "y": 580
+            },
+            {
+              "x": 710,
+              "y": 655
+            },
+            {
+              "x": 890,
+              "y": 730
+            },
+            {
+              "x": 1080,
+              "y": 790
+            },
+            {
+              "x": 1280,
+              "y": 845
+            },
+            {
+              "x": 1480,
+              "y": 895
+            },
+            {
+              "x": 1680,
+              "y": 960
+            },
+            {
+              "x": 1885,
+              "y": 1035
+            }
+          ],
+          "entryPoint": {
+            "x": 300,
+            "y": -70
+          },
+          "breachPoint": {
+            "x": 1885,
+            "y": 1035
+          }
+        },
+        {
+          "id": "ROUTE_STAGE_08_ABYSS_B",
+          "label": "路线 B",
+          "color": "#ff6bd6",
+          "points": [
+            {
+              "x": 330,
+              "y": -60
+            },
+            {
+              "x": 305,
+              "y": 30
+            },
+            {
+              "x": 250,
+              "y": 110
+            },
+            {
+              "x": 225,
+              "y": 205
+            },
+            {
+              "x": 240,
+              "y": 300
+            },
+            {
+              "x": 305,
+              "y": 390
+            },
+            {
+              "x": 420,
+              "y": 480
+            },
+            {
+              "x": 560,
+              "y": 555
+            },
+            {
+              "x": 720,
+              "y": 625
+            },
+            {
+              "x": 900,
+              "y": 700
+            },
+            {
+              "x": 1090,
+              "y": 760
+            },
+            {
+              "x": 1290,
+              "y": 815
+            },
+            {
+              "x": 1490,
+              "y": 865
+            },
+            {
+              "x": 1690,
+              "y": 930
+            },
+            {
+              "x": 1900,
+              "y": 1030
+            }
+          ],
+          "entryPoint": {
+            "x": 330,
+            "y": -60
+          },
+          "breachPoint": {
+            "x": 1900,
+            "y": 1030
+          }
+        },
+        {
+          "id": "ROUTE_STAGE_08_ABYSS_C",
+          "label": "路线 C",
+          "color": "#63e6ff",
+          "points": [
+            {
+              "x": 360,
+              "y": -50
+            },
+            {
+              "x": 330,
+              "y": 45
+            },
+            {
+              "x": 275,
+              "y": 120
+            },
+            {
+              "x": 255,
+              "y": 205
+            },
+            {
+              "x": 270,
+              "y": 290
+            },
+            {
+              "x": 325,
+              "y": 370
+            },
+            {
+              "x": 435,
+              "y": 455
+            },
+            {
+              "x": 575,
+              "y": 530
+            },
+            {
+              "x": 730,
+              "y": 595
+            },
+            {
+              "x": 910,
+              "y": 670
+            },
+            {
+              "x": 1100,
+              "y": 730
+            },
+            {
+              "x": 1300,
+              "y": 785
+            },
+            {
+              "x": 1500,
+              "y": 835
+            },
+            {
+              "x": 1700,
+              "y": 900
+            },
+            {
+              "x": 1915,
+              "y": 1005
+            }
+          ],
+          "entryPoint": {
+            "x": 360,
+            "y": -50
+          },
+          "breachPoint": {
+            "x": 1915,
+            "y": 1005
+          }
+        }
+      ],
+      "platforms": [
+        {
+          "candidateId": "T1",
+          "point": {
+            "x": 576,
+            "y": 192
+          },
+          "marker": "预1",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T2",
+          "point": {
+            "x": 288,
+            "y": 704
+          },
+          "marker": "预2",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T3",
+          "point": {
+            "x": 800,
+            "y": 352
+          },
+          "marker": "塔1",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T4",
+          "point": {
+            "x": 544,
+            "y": 832
+          },
+          "marker": "预3",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T5",
+          "point": {
+            "x": 1088,
+            "y": 384
+          },
+          "marker": "塔2",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T6",
+          "point": {
+            "x": 96,
+            "y": 544
+          },
+          "marker": "预4",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T7",
+          "point": {
+            "x": 1440,
+            "y": 480
+          },
+          "marker": "塔3",
+          "status": "current-tower",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        },
+        {
+          "candidateId": "T8",
+          "point": {
+            "x": 1760,
+            "y": 608
+          },
+          "marker": "预5",
+          "status": "reserve-platform",
+          "visualArtOffset": {
+            "x": 0,
+            "y": 0
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -404,6 +404,8 @@ const projectileCheckpoint = JSON.parse(
     projectiles: Array<{
       entityId: number;
       targetEntityId: number;
+      xMilli: number;
+      yMilli: number;
       damageMilli: number;
     }>;
     towerCooldowns: number[];
@@ -418,7 +420,15 @@ const projectileFixture = projectileCheckpoint.state.projectiles[0];
 const projectileTargetFixture = projectileCheckpoint.state.enemies.find(
   (enemy) => enemy.entityId === projectileFixture?.targetEntityId,
 );
-assert.ok(projectileFixture && projectileTargetFixture);
+const projectileTargetRender = projectileProbeSimulation.getRenderSnapshot().entities.find(
+  (entity) => entity.renderKind === 'enemy' && entity.entityId === projectileFixture?.targetEntityId,
+);
+assert.ok(projectileFixture && projectileTargetFixture && projectileTargetRender);
+// Keep the serialized boundary fixture independent from the authored tower pads.
+// The real shot is still used, but it starts at the target so the following
+// overflow and experience probes exercise their intended hit on the next tick.
+projectileFixture.xMilli = Math.round(projectileTargetRender.x * 1_000);
+projectileFixture.yMilli = Math.round(projectileTargetRender.y * 1_000);
 projectileCheckpoint.state.projectiles = [projectileFixture];
 projectileCheckpoint.state.enemies = [projectileTargetFixture];
 createBattleSimulation(

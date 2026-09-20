@@ -17,9 +17,9 @@ import {
   projectBattleWorldPoint,
 } from '../src/render/CanvasRenderer';
 
-interface Stage01RoadContract {
-  schemaVersion: 2;
-  stageId: 'STAGE_01';
+interface StageRoadContract {
+  schemaVersion: 3;
+  stageId: BattleStageId;
   background: {
     assetPath: string;
     sha256: string;
@@ -27,18 +27,10 @@ interface Stage01RoadContract {
     height: number;
     worldRect: { x: number; y: number; width: number; height: number };
   };
-  visibleRoadCorridor: Array<{
-    routePointIndex: number;
-    assetX: number;
-    assetY: number;
-    toleranceX: number;
-    toleranceY: number;
-  }>;
-  roadCenterline: {
-    maxDeviationPx: number;
-    sampleStepPx: number;
-    points: Point[];
-  };
+  waypointTolerancePx: number;
+  maxDeviationPx: number;
+  sampleStepPx: number;
+  assetRoutePoints: Point[];
 }
 
 const { readFileSync } = require('node:fs') as {
@@ -60,10 +52,16 @@ const FIXED_STAGE_IDS = [
   'STAGE_07',
 ] as const satisfies readonly BattleStageId[];
 
+const CALIBRATED_ROAD_STAGE_IDS = [
+  'STAGE_01',
+  'STAGE_02',
+  'STAGE_03',
+] as const satisfies readonly BattleStageId[];
+
 const TARGET_LENGTH_PX: Record<(typeof FIXED_STAGE_IDS)[number], number> = {
-  STAGE_01: 1_475,
-  STAGE_02: 1_800,
-  STAGE_03: 2_000,
+  STAGE_01: 1_960,
+  STAGE_02: 1_840,
+  STAGE_03: 1_960,
   STAGE_04: 2_150,
   STAGE_05: 2_250,
   STAGE_06: 2_400,
@@ -71,14 +69,24 @@ const TARGET_LENGTH_PX: Record<(typeof FIXED_STAGE_IDS)[number], number> = {
 };
 const TARGET_TOLERANCE_PX: Record<(typeof FIXED_STAGE_IDS)[number], number> = {
   STAGE_01: 40,
-  STAGE_02: 140,
-  STAGE_03: 140,
+  STAGE_02: 40,
+  STAGE_03: 40,
   STAGE_04: 140,
   STAGE_05: 140,
   STAGE_06: 140,
   STAGE_07: 140,
 };
 const MIN_ADJACENT_GROWTH_PX = 20;
+// Stage 01's annotated side-gate road contains a deliberately longer lower
+// S-bend than Stage 02. From Stage 02 onward the campaign still grows in route
+// length; Stage 01 difficulty remains governed by its protected ingress.
+const ADJACENT_GROWTH_STAGE_IDS = new Set<BattleStageId>([
+  'STAGE_03',
+  'STAGE_04',
+  'STAGE_05',
+  'STAGE_06',
+  'STAGE_07',
+]);
 const STAGE_01_COMBAT_START_DISTANCE_PX = 420;
 const STAGE_01_VISIBLE_GROUND_ENTRY_PX = 160;
 const STAGE_01_TOP_CONTROLS_BOTTOM_Y = 106;
@@ -147,67 +155,66 @@ function pointAtRouteDistance(points: readonly Point[], distancePx: number): Poi
   return { ...points[points.length - 1]! };
 }
 
-function readStage01RoadContract(): Stage01RoadContract {
-  const contractPath = `${process.cwd()}/scripts/stage-01-road-contract.json`;
+function readStageRoadContract(stageId: (typeof CALIBRATED_ROAD_STAGE_IDS)[number]): StageRoadContract {
+  const suffix = stageId.slice(-2).toLowerCase();
+  const contractPath = `${process.cwd()}/scripts/stage-${suffix}-road-contract.json`;
   const source = readFileSync(contractPath, 'utf8');
-  assert(typeof source === 'string', 'STAGE_01 road contract must be readable JSON text.');
-  return JSON.parse(source) as Stage01RoadContract;
+  assert(typeof source === 'string', `${stageId} road contract must be readable JSON text.`);
+  return JSON.parse(source) as StageRoadContract;
 }
 
-function assertStage01BackgroundRoadContract(points: readonly Point[]): void {
-  const contract = readStage01RoadContract();
-  assert(contract.schemaVersion === 2, 'STAGE_01 road contract schema must remain version 2.');
-  assert(contract.stageId === 'STAGE_01', 'STAGE_01 road contract must target Stage 01.');
+function assertBackgroundRoadContract(
+  stageId: (typeof CALIBRATED_ROAD_STAGE_IDS)[number],
+  points: readonly Point[],
+): void {
+  const contract = readStageRoadContract(stageId);
+  assert(contract.schemaVersion === 3, `${stageId} road contract schema must remain version 3.`);
+  assert(contract.stageId === stageId, `${stageId} road contract must target its matching stage.`);
   assert(
     JSON.stringify(contract.background.worldRect) === JSON.stringify(BATTLE_BACKGROUND_WORLD_RECT),
-    'STAGE_01 road contract world rect must match the renderer background projection.',
+    `${stageId} road contract world rect must match the renderer background projection.`,
   );
   assert(
     contract.background.width === BATTLE_BACKGROUND_WORLD_RECT.width &&
       contract.background.height === BATTLE_BACKGROUND_WORLD_RECT.height,
-    'STAGE_01 road contract dimensions must match the formal battle background.',
+    `${stageId} road contract dimensions must match the formal battle background.`,
   );
   const background = readFileSync(`${process.cwd()}/${contract.background.assetPath}`);
-  assert(background instanceof Uint8Array, 'STAGE_01 formal background must be readable as bytes.');
+  assert(background instanceof Uint8Array, `${stageId} formal background must be readable as bytes.`);
   const actualSha256 = createHash('sha256').update(background).digest('hex');
   assert(
     actualSha256 === contract.background.sha256,
-    `STAGE_01 background changed without a re-authored road contract (${actualSha256}).`,
+    `${stageId} background changed without a re-authored road contract (${actualSha256}).`,
   );
   assert(
-    contract.visibleRoadCorridor.length === points.length,
-    'STAGE_01 road contract must cover every waypoint from the visible gate to the breach.',
+    contract.assetRoutePoints.length === points.length,
+    `${stageId} road contract must cover every waypoint from the visible entry to the breach.`,
   );
-  for (let index = 0; index < contract.visibleRoadCorridor.length; index += 1) {
-    const corridor = contract.visibleRoadCorridor[index]!;
-    const expectedRoutePointIndex = index;
-    assert(
-      corridor.routePointIndex === expectedRoutePointIndex,
-      `STAGE_01 road contract must cover visible waypoint ${expectedRoutePointIndex} in order.`,
-    );
-    const point = points[corridor.routePointIndex];
-    assert(point, `STAGE_01 is missing visible road waypoint ${corridor.routePointIndex}.`);
+  assert(
+    contract.waypointTolerancePx > 0 &&
+      contract.maxDeviationPx > 0 &&
+      contract.sampleStepPx > 0,
+    `${stageId} road contract must define positive waypoint and segment tolerances.`,
+  );
+  for (let index = 0; index < contract.assetRoutePoints.length; index += 1) {
+    const expectedAssetPoint = contract.assetRoutePoints[index]!;
+    const point = points[index];
+    assert(point, `${stageId} is missing visible road waypoint ${index}.`);
     const assetX = point.x - BATTLE_BACKGROUND_WORLD_RECT.x;
     const assetY = point.y - BATTLE_BACKGROUND_WORLD_RECT.y;
     assert(
-      Math.abs(assetX - corridor.assetX) <= corridor.toleranceX &&
-        Math.abs(assetY - corridor.assetY) <= corridor.toleranceY,
-      `STAGE_01 visible waypoint ${corridor.routePointIndex} maps to asset (${assetX}, ${assetY}) outside its authored road corridor.`,
+      Math.abs(assetX - expectedAssetPoint.x) <= contract.waypointTolerancePx &&
+        Math.abs(assetY - expectedAssetPoint.y) <= contract.waypointTolerancePx,
+      `${stageId} visible waypoint ${index} maps to asset (${assetX}, ${assetY}) outside its authored road corridor.`,
     );
   }
-  assert(
-    contract.roadCenterline.points.length >= 2 &&
-      contract.roadCenterline.maxDeviationPx > 0 &&
-      contract.roadCenterline.sampleStepPx > 0,
-    'STAGE_01 road centerline contract must define a positive dense-sampling corridor.',
-  );
   for (let index = 1; index < points.length; index += 1) {
     const start = points[index - 1]!;
     const end = points[index]!;
     const segmentLength = Math.hypot(end.x - start.x, end.y - start.y);
     const sampleCount = Math.max(
       1,
-      Math.ceil(segmentLength / contract.roadCenterline.sampleStepPx),
+      Math.ceil(segmentLength / contract.sampleStepPx),
     );
     for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex += 1) {
       const ratio = sampleIndex / sampleCount;
@@ -217,11 +224,11 @@ function assertStage01BackgroundRoadContract(points: readonly Point[]): void {
       };
       const deviation = distanceFromPointToPolyline(
         assetPoint,
-        contract.roadCenterline.points,
+        contract.assetRoutePoints,
       );
       assert(
-        deviation <= contract.roadCenterline.maxDeviationPx,
-        `STAGE_01 route segment ${index - 1}→${index} leaves the paved-road corridor by ${deviation.toFixed(1)}px at asset (${assetPoint.x.toFixed(1)}, ${assetPoint.y.toFixed(1)}).`,
+        deviation <= contract.maxDeviationPx,
+        `${stageId} route segment ${index - 1}→${index} leaves the paved-road corridor by ${deviation.toFixed(1)}px at asset (${assetPoint.x.toFixed(1)}, ${assetPoint.y.toFixed(1)}).`,
       );
     }
   }
@@ -344,9 +351,20 @@ for (const stageId of FIXED_STAGE_IDS) {
   const points = route.points;
   assert(points.length >= 7, `${stageId} route needs enough turns to read as winding.`);
   assert(route.towerAnchors.length === 4, `${stageId} must author four fixed-campaign tower slots.`);
+  assert(
+    JSON.stringify(route.breachPoint) === JSON.stringify(points[points.length - 1]),
+    `${stageId} breach point must be the final route point so visuals and simulation agree.`,
+  );
+  if (CALIBRATED_ROAD_STAGE_IDS.includes(
+    stageId as (typeof CALIBRATED_ROAD_STAGE_IDS)[number],
+  )) {
+    assertBackgroundRoadContract(
+      stageId as (typeof CALIBRATED_ROAD_STAGE_IDS)[number],
+      points,
+    );
+  }
   if (stageId === 'STAGE_01') {
     assertStage01SideGateEntry(points);
-    assertStage01BackgroundRoadContract(points);
     assertStage01ProtectedIngress();
     assertAllStage01AnchorsAreLegal();
   } else {
@@ -372,7 +390,7 @@ for (const stageId of FIXED_STAGE_IDS) {
     Math.abs(length - target) <= tolerance,
     `${stageId} route length ${length.toFixed(1)}px misses ${target}±${tolerance}px.`,
   );
-  if (previousLength > 0) {
+  if (previousLength > 0 && ADJACENT_GROWTH_STAGE_IDS.has(stageId)) {
     assert(
       length >= previousLength + MIN_ADJACENT_GROWTH_PX,
       `${stageId} route must grow by at least ${MIN_ADJACENT_GROWTH_PX}px from the prior stage.`,
@@ -388,4 +406,4 @@ assert(
   'Stage 08 leaderboard routes must remain on their three-tower contract.',
 );
 
-console.log(`✓ 关卡路线逐关增长、曲折且无自交（${summary.join(' / ')}）`);
+console.log(`✓ 关卡路线匹配校准长度、曲折且无自交（${summary.join(' / ')}）`);
