@@ -22,11 +22,31 @@ import {
 } from '../src/core/content';
 
 const STAGE_01_AUTHORED_TOWER_ANCHORS = [
-  { x: 1_216, y: 320 },
-  { x: 1_504, y: 832 },
-  { x: 1_728, y: 608 },
-  { x: 992, y: 480 },
+  { x: 1_216, y: 256 },
+  { x: 1_600, y: 768 },
+  { x: 1_792, y: 512 },
+  { x: 928, y: 480 },
 ] as const;
+
+const STAGE_02_AUTHORED_TOWER_ANCHORS = [
+  { x: 1_248, y: 224 },
+  { x: 1_344, y: 608 },
+  { x: 1_376, y: 960 },
+  { x: 480, y: 960 },
+] as const;
+
+const STAGE_03_AUTHORED_TOWER_ANCHORS = [
+  { x: 768, y: 480 },
+  { x: 480, y: 160 },
+  { x: 1_408, y: 160 },
+  { x: 1_504, y: 768 },
+] as const;
+
+const AUTHORED_CALIBRATED_TOWER_ANCHORS = {
+  STAGE_01: STAGE_01_AUTHORED_TOWER_ANCHORS,
+  STAGE_02: STAGE_02_AUTHORED_TOWER_ANCHORS,
+  STAGE_03: STAGE_03_AUTHORED_TOWER_ANCHORS,
+} as const;
 
 const assert = {
   equal(actual: unknown, expected: unknown, message?: string): void {
@@ -171,16 +191,17 @@ for (const bundle of [
     4,
     `${bundle.stage.id} must author four tower slots.`,
   );
-  if (bundle.stage.id === 'STAGE_01') {
+  if (bundle.stage.id in AUTHORED_CALIBRATED_TOWER_ANCHORS) {
+    const expected = AUTHORED_CALIBRATED_TOWER_ANCHORS[
+      bundle.stage.id as keyof typeof AUTHORED_CALIBRATED_TOWER_ANCHORS
+    ];
     assert.deepEqual(
       bundle.route.towerAnchors,
-      STAGE_01_AUTHORED_TOWER_ANCHORS,
-      'STAGE_01 tower shoulders must stay aligned with the visible road and gate composition.',
+      expected,
+      `${bundle.stage.id} tower anchors must stay aligned with the calibrated visible platforms.`,
     );
   }
-  const anchorsToValidate = bundle.stage.id === 'STAGE_01'
-    ? bundle.route.towerAnchors.map((anchor, index) => ({ anchor, index }))
-    : [{ anchor: bundle.route.towerAnchors[3], index: 3 }];
+  const anchorsToValidate = bundle.route.towerAnchors.map((anchor, index) => ({ anchor, index }));
   for (const { anchor, index } of anchorsToValidate) {
     if (anchor === undefined) {
       throw new Error(`${bundle.stage.id} has no tower anchor ${index + 1}.`);
@@ -206,10 +227,38 @@ for (const bundle of [
   }
 }
 
+const stage08Bundle = createStage08Bundle();
 assert.equal(
-  createStage08Bundle().route.towerAnchors.length,
+  stage08Bundle.route.towerAnchors.length,
   3,
   'Stage 08 must preserve its exact three-tower leaderboard contract.',
 );
+assert.equal(
+  stage08Bundle.endless?.routes.length,
+  3,
+  'Stage 08 must validate its authored towers against every endless route.',
+);
+for (const route of stage08Bundle.endless?.routes ?? []) {
+  for (const [index, anchor] of route.towerAnchors.entries()) {
+    assert.deepEqual(
+      snapTowerPlacement(anchor),
+      anchor,
+      `${route.id} tower anchor ${index + 1} must stay on the 32px grid.`,
+    );
+    assert.deepEqual(
+      validateTowerPlacement({
+        point: anchor,
+        buildZones: createDefaultTowerBuildZones(),
+        routePoints: route.points,
+        breachPoint: route.breachPoint,
+        existingTowerPoints: route.towerAnchors.filter(
+          (_, candidateIndex) => candidateIndex !== index,
+        ),
+      }),
+      { valid: true, point: anchor },
+      `${route.id} tower anchor ${index + 1} must be legal for the selected endless route.`,
+    );
+  }
+}
 
 console.log('✓ 自由布阵网格吸附、区域、道路、塔间距与关门安全校验通过');

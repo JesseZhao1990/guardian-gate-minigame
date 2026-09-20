@@ -1,0 +1,2169 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted-platform-layout",
+  "generatedAssetVersion": "2026-09-01-v4",
+  "generatedAt": "2026-09-01T15:20:44.723Z",
+  "sourceConfig": "scripts/tower-layout-guide-candidates.json",
+  "mapping": {
+    "worldToAsset": {
+      "x": "+640",
+      "y": "+60"
+    },
+    "designToAsset": {
+      "x": "4/3*x+320",
+      "y": "4/3*y"
+    },
+    "visible16x9": [
+      320,
+      0,
+      2880,
+      1440
+    ]
+  },
+  "rules": {
+    "routeClearancePx": 170,
+    "breachClearancePx": 240,
+    "gridPx": 32,
+    "towerSpacingPx": 200,
+    "buildZoneInsetPx": 96,
+    "battlefieldWidthPx": 1920,
+    "battlefieldHeightPx": 1200
+  },
+  "hudRects": [
+    {
+      "id": "TOP",
+      "label": "顶部 HUD",
+      "rect": [
+        320,
+        0,
+        2880,
+        163
+      ],
+      "kind": "hard",
+      "visualBufferPx": 128
+    },
+    {
+      "id": "LEFT_SHORTCUT",
+      "label": "战功快捷栏",
+      "rect": [
+        360,
+        757,
+        816,
+        1189
+      ],
+      "kind": "hard",
+      "visualBufferPx": 128
+    },
+    {
+      "id": "BOTTOM_LEFT",
+      "label": "底部左 HUD",
+      "rect": [
+        320,
+        1224,
+        1120,
+        1440
+      ],
+      "kind": "hard",
+      "visualBufferPx": 128
+    },
+    {
+      "id": "BOTTOM_RIGHT",
+      "label": "底部右 HUD",
+      "rect": [
+        2333,
+        1224,
+        2880,
+        1440
+      ],
+      "kind": "hard",
+      "visualBufferPx": 128
+    },
+    {
+      "id": "PREPARATION",
+      "label": "准备栏",
+      "rect": [
+        1267,
+        1075,
+        1933,
+        1216
+      ],
+      "kind": "hard",
+      "visualBufferPx": 128
+    }
+  ],
+  "stages": [
+    {
+      "stageId": "STAGE_01",
+      "name": "关外练兵场",
+      "file": "stage-01-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-01/background/STAGE_01_BACKGROUND.jpg",
+        "sha256": "46d86f7e9bde822dfb5cb2a41bbfb843c730f643529fcd06684b87d11b7f4d48",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_01"
+      ],
+      "maximumActiveTowers": 4,
+      "outerRadius": {
+        "x": 120,
+        "y": 84
+      },
+      "innerRadius": {
+        "x": 40,
+        "y": 40
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 1216,
+            "y": 256
+          },
+          "asset": {
+            "x": 1856,
+            "y": 316
+          },
+          "art": "上段海侧石砦",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 263.8,
+          "minimumInnerRouteDistancePx": 223.8,
+          "centerBreachDistancePx": 1065.2,
+          "minimumInnerBreachDistancePx": 1025.2,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 1792,
+            "y": 512
+          },
+          "asset": {
+            "x": 2432,
+            "y": 572
+          },
+          "art": "右上林崖悬挑台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 229.1,
+          "minimumInnerRouteDistancePx": 189.1,
+          "centerBreachDistancePx": 1139.1,
+          "minimumInnerBreachDistancePx": 1099.1,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 928,
+            "y": 480
+          },
+          "asset": {
+            "x": 1568,
+            "y": 540
+          },
+          "art": "中段海侧悬挑台",
+          "risk": "需要挡墙和悬臂结构",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 277.2,
+          "minimumInnerRouteDistancePx": 237.2,
+          "centerBreachDistancePx": 810.6,
+          "minimumInnerBreachDistancePx": 770.6,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 1600,
+            "y": 768
+          },
+          "asset": {
+            "x": 2240,
+            "y": 828
+          },
+          "art": "右下草肩平台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 257.4,
+          "minimumInnerRouteDistancePx": 217.4,
+          "centerBreachDistancePx": 825.9,
+          "minimumInnerBreachDistancePx": 785.9,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 928,
+            "y": 896
+          },
+          "asset": {
+            "x": 1568,
+            "y": 956
+          },
+          "art": "下段海侧平台",
+          "risk": "向海侧让开新 S 弯一个网格，仍需补建悬臂承重",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 215.8,
+          "minimumInnerRouteDistancePx": 175.8,
+          "centerBreachDistancePx": 395.3,
+          "minimumInnerBreachDistancePx": 355.3,
+          "visualBufferConflicts": [
+            "PREPARATION"
+          ]
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 1216,
+            "y": 256
+          },
+          "onGrid": true,
+          "routeDistance": 263.80124021623294,
+          "breachDistance": 1065.2192262628384,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 1600,
+            "y": 768
+          },
+          "onGrid": true,
+          "routeDistance": 257.37909783041823,
+          "breachDistance": 825.8837690619667,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 1792,
+            "y": 512
+          },
+          "onGrid": true,
+          "routeDistance": 229.0620948541444,
+          "breachDistance": 1139.0820865942894,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 4,
+          "point": {
+            "x": 928,
+            "y": 480
+          },
+          "onGrid": true,
+          "routeDistance": 277.18585822512665,
+          "breachDistance": 810.6318523226187,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_02",
+      "name": "东海礁港",
+      "file": "stage-02-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-02/background/STAGE_02_BACKGROUND.jpg",
+        "sha256": "5d7bc4457cf843a5fe162f82bff8ac866965d22cb5ee6d1617c6f97eb335a334",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_02_REEF"
+      ],
+      "maximumActiveTowers": 4,
+      "outerRadius": {
+        "x": 120,
+        "y": 84
+      },
+      "innerRadius": {
+        "x": 40,
+        "y": 40
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 416,
+            "y": 224
+          },
+          "asset": {
+            "x": 1056,
+            "y": 284
+          },
+          "art": "左上玄武岩台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 364,
+          "minimumInnerRouteDistancePx": 324,
+          "centerBreachDistancePx": 1057.5,
+          "minimumInnerBreachDistancePx": 1017.5,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 1248,
+            "y": 224
+          },
+          "asset": {
+            "x": 1888,
+            "y": 284
+          },
+          "art": "右上玄武岩台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 298,
+          "minimumInnerRouteDistancePx": 258,
+          "centerBreachDistancePx": 1171,
+          "minimumInnerBreachDistancePx": 1131,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 480,
+            "y": 576
+          },
+          "asset": {
+            "x": 1120,
+            "y": 636
+          },
+          "art": "左中玄武岩台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 271.5,
+          "minimumInnerRouteDistancePx": 231.5,
+          "centerBreachDistancePx": 701.1,
+          "minimumInnerBreachDistancePx": 661.1,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 1344,
+            "y": 608
+          },
+          "asset": {
+            "x": 1984,
+            "y": 668
+          },
+          "art": "右中玄武岩台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 308.1,
+          "minimumInnerRouteDistancePx": 268.1,
+          "centerBreachDistancePx": 922.2,
+          "minimumInnerBreachDistancePx": 882.2,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 480,
+            "y": 960
+          },
+          "asset": {
+            "x": 1120,
+            "y": 1020
+          },
+          "art": "左下玄武岩台",
+          "risk": "将原说明层偏移固化为真实塔位",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 350.4,
+          "minimumInnerRouteDistancePx": 310.4,
+          "centerBreachDistancePx": 350.6,
+          "minimumInnerBreachDistancePx": 310.6,
+          "visualBufferConflicts": [
+            "BOTTOM_LEFT",
+            "PREPARATION"
+          ]
+        },
+        {
+          "id": "T6",
+          "world": {
+            "x": 1376,
+            "y": 960
+          },
+          "asset": {
+            "x": 2016,
+            "y": 1020
+          },
+          "art": "右下玄武岩台",
+          "risk": "将原说明层偏移固化为真实塔位",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 364,
+          "minimumInnerRouteDistancePx": 324,
+          "centerBreachDistancePx": 753.2,
+          "minimumInnerBreachDistancePx": 713.2,
+          "visualBufferConflicts": [
+            "PREPARATION"
+          ]
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 1248,
+            "y": 224
+          },
+          "onGrid": true,
+          "routeDistance": 298,
+          "breachDistance": 1170.9824934643557,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 1344,
+            "y": 608
+          },
+          "onGrid": true,
+          "routeDistance": 308.05843601498725,
+          "breachDistance": 922.2234002669852,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 1376,
+            "y": 960
+          },
+          "onGrid": true,
+          "routeDistance": 364,
+          "breachDistance": 753.2330316708103,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 4,
+          "point": {
+            "x": 480,
+            "y": 960
+          },
+          "onGrid": true,
+          "routeDistance": 350.35240712674334,
+          "breachDistance": 350.633712012978,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_03",
+      "name": "镇海龙门",
+      "file": "stage-03-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-03/background/STAGE_03_BACKGROUND.jpg",
+        "sha256": "384e8f4c8e1f93cd526bef7853f190fb2ced547eccae231df7161b1e66609e89",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_03_DRAGON_GATE"
+      ],
+      "maximumActiveTowers": 4,
+      "outerRadius": {
+        "x": 120,
+        "y": 84
+      },
+      "innerRadius": {
+        "x": 40,
+        "y": 40
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 480,
+            "y": 160
+          },
+          "asset": {
+            "x": 1120,
+            "y": 220
+          },
+          "art": "左上龙鳞石台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 232.8,
+          "minimumInnerRouteDistancePx": 192.8,
+          "centerBreachDistancePx": 1057.6,
+          "minimumInnerBreachDistancePx": 1017.6,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 1408,
+            "y": 160
+          },
+          "asset": {
+            "x": 2048,
+            "y": 220
+          },
+          "art": "右上龙骨悬台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 416.4,
+          "minimumInnerRouteDistancePx": 376.4,
+          "centerBreachDistancePx": 742,
+          "minimumInnerBreachDistancePx": 702,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 768,
+            "y": 480
+          },
+          "asset": {
+            "x": 1408,
+            "y": 540
+          },
+          "art": "左中近路龙鳞石台",
+          "risk": "按标注右移至中段外弯，保留道路禁建距离",
+          "adjustment": {
+            "from": {
+              "x": 416,
+              "y": 544
+            },
+            "arrowTarget": {
+              "x": 784,
+              "y": 495
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 768,
+              "y": 480
+            },
+            "resolvedDistanceFromArrowTargetPx": 21.9,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 165.7,
+              "minimumInnerRouteDistancePx": 125.7,
+              "centerBreachDistancePx": 607.7,
+              "minimumInnerBreachDistancePx": 567.7,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 175.3,
+          "minimumInnerRouteDistancePx": 135.3,
+          "centerBreachDistancePx": 629.6,
+          "minimumInnerBreachDistancePx": 589.6,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 1664,
+            "y": 480
+          },
+          "asset": {
+            "x": 2304,
+            "y": 540
+          },
+          "art": "右中龙骨悬台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 534.1,
+          "minimumInnerRouteDistancePx": 494.1,
+          "centerBreachDistancePx": 579.2,
+          "minimumInnerBreachDistancePx": 539.2,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 416,
+            "y": 896
+          },
+          "asset": {
+            "x": 1056,
+            "y": 956
+          },
+          "art": "左下龙鳞石台",
+          "risk": "按标注对准平台台面中心",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 377.7,
+          "minimumInnerRouteDistancePx": 337.7,
+          "centerBreachDistancePx": 834.1,
+          "minimumInnerBreachDistancePx": 794.1,
+          "visualBufferConflicts": [
+            "LEFT_SHORTCUT",
+            "PREPARATION"
+          ]
+        },
+        {
+          "id": "T6",
+          "world": {
+            "x": 1504,
+            "y": 768
+          },
+          "asset": {
+            "x": 2144,
+            "y": 828
+          },
+          "art": "右下关门前台",
+          "risk": "现三号塔迁移",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 279.7,
+          "minimumInnerRouteDistancePx": 239.7,
+          "centerBreachDistancePx": 279.7,
+          "minimumInnerBreachDistancePx": 239.7,
+          "visualBufferConflicts": []
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 768,
+            "y": 480
+          },
+          "onGrid": true,
+          "routeDistance": 175.3077294359835,
+          "breachDistance": 629.5625465352907,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 480,
+            "y": 160
+          },
+          "onGrid": true,
+          "routeDistance": 232.83420003487964,
+          "breachDistance": 1057.6034228386366,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 1408,
+            "y": 160
+          },
+          "onGrid": true,
+          "routeDistance": 416.39404414568656,
+          "breachDistance": 742.0168461699506,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 4,
+          "point": {
+            "x": 1504,
+            "y": 768
+          },
+          "onGrid": true,
+          "routeDistance": 279.6515689210415,
+          "breachDistance": 279.6515689210415,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_04",
+      "name": "归墟潮眼",
+      "file": "stage-04-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-04/background/STAGE_04_BACKGROUND.jpg",
+        "sha256": "cec6ab5bbe8fa9c41c4b3c180d474c49b7c060d6c0abe55b4e13ff00ac31a593",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_04_GUIXU"
+      ],
+      "maximumActiveTowers": 4,
+      "outerRadius": {
+        "x": 120,
+        "y": 84
+      },
+      "innerRadius": {
+        "x": 40,
+        "y": 40
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 544,
+            "y": 448
+          },
+          "asset": {
+            "x": 1184,
+            "y": 508
+          },
+          "art": "左中潮眼外沿阵台",
+          "risk": "按标注下移至第一处折返点外侧",
+          "adjustment": {
+            "from": {
+              "x": 512,
+              "y": 224
+            },
+            "arrowTarget": {
+              "x": 626,
+              "y": 513
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 544,
+              "y": 448
+            },
+            "resolvedDistanceFromArrowTargetPx": 104.6,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 115.6,
+              "minimumInnerRouteDistancePx": 75.7,
+              "centerBreachDistancePx": 720,
+              "minimumInnerBreachDistancePx": 680,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 220,
+          "minimumInnerRouteDistancePx": 180,
+          "centerBreachDistancePx": 817.9,
+          "minimumInnerBreachDistancePx": 777.9,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 1024,
+            "y": 224
+          },
+          "asset": {
+            "x": 1664,
+            "y": 284
+          },
+          "art": "上中镇潮阵台",
+          "risk": "现四号塔下移",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 324.5,
+          "minimumInnerRouteDistancePx": 284.5,
+          "centerBreachDistancePx": 917.1,
+          "minimumInnerBreachDistancePx": 877.1,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 1696,
+            "y": 416
+          },
+          "asset": {
+            "x": 2336,
+            "y": 476
+          },
+          "art": "右上镇潮阵台",
+          "risk": "接近现二号塔",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 307.7,
+          "minimumInnerRouteDistancePx": 267.7,
+          "centerBreachDistancePx": 1018.2,
+          "minimumInnerBreachDistancePx": 978.2,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 1216,
+            "y": 736
+          },
+          "asset": {
+            "x": 1856,
+            "y": 796
+          },
+          "art": "右中潮眼外沿阵台",
+          "risk": "按标注左移并停在道路禁建带右缘",
+          "adjustment": {
+            "from": {
+              "x": 1536,
+              "y": 768
+            },
+            "arrowTarget": {
+              "x": 1104,
+              "y": 742
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 1216,
+              "y": 736
+            },
+            "resolvedDistanceFromArrowTargetPx": 112.2,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 170.8,
+              "minimumInnerRouteDistancePx": 130.8,
+              "centerBreachDistancePx": 416.9,
+              "minimumInnerBreachDistancePx": 376.9,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 216.6,
+          "minimumInnerRouteDistancePx": 176.6,
+          "centerBreachDistancePx": 467.9,
+          "minimumInnerBreachDistancePx": 427.9,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 1472,
+            "y": 1056
+          },
+          "asset": {
+            "x": 2112,
+            "y": 1116
+          },
+          "art": "下方外环阵台",
+          "risk": "靠近准备栏右缘",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 374.5,
+          "minimumInnerRouteDistancePx": 334.5,
+          "centerBreachDistancePx": 499.1,
+          "minimumInnerBreachDistancePx": 459.1,
+          "visualBufferConflicts": [
+            "BOTTOM_RIGHT",
+            "PREPARATION"
+          ]
+        },
+        {
+          "id": "T6",
+          "world": {
+            "x": 416,
+            "y": 864
+          },
+          "asset": {
+            "x": 1056,
+            "y": 924
+          },
+          "art": "左下悬环台",
+          "risk": "需要补一段石梁",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 268.1,
+          "minimumInnerRouteDistancePx": 228.1,
+          "centerBreachDistancePx": 627.9,
+          "minimumInnerBreachDistancePx": 587.9,
+          "visualBufferConflicts": [
+            "LEFT_SHORTCUT",
+            "PREPARATION"
+          ]
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 1696,
+            "y": 416
+          },
+          "onGrid": true,
+          "routeDistance": 307.6829537039711,
+          "breachDistance": 1018.2494782714107,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 544,
+            "y": 448
+          },
+          "onGrid": true,
+          "routeDistance": 219.98884665309097,
+          "breachDistance": 817.8997493580738,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 416,
+            "y": 864
+          },
+          "onGrid": true,
+          "routeDistance": 268.12683565805196,
+          "breachDistance": 627.9108216936542,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 4,
+          "point": {
+            "x": 1472,
+            "y": 1056
+          },
+          "onGrid": true,
+          "routeDistance": 374.5130171302461,
+          "breachDistance": 499.1192242340501,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_05",
+      "name": "扶桑天阙",
+      "file": "stage-05-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-05/background/STAGE_05_BACKGROUND.jpg",
+        "sha256": "34758bc019d90097d93e0d87d7c8e113f8ecafe9cfaddc5f6376d3cc63266305",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_05_FUSANG"
+      ],
+      "maximumActiveTowers": 4,
+      "outerRadius": {
+        "x": 112,
+        "y": 88
+      },
+      "innerRadius": {
+        "x": 48,
+        "y": 48
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 736,
+            "y": 192
+          },
+          "asset": {
+            "x": 1376,
+            "y": 252
+          },
+          "art": "北侧白玉云台",
+          "risk": "按标注右上移；固定关敌潮 HUD 已收窄，完整露出台地和塔体",
+          "adjustment": {
+            "from": {
+              "x": 480,
+              "y": 256
+            },
+            "arrowTarget": {
+              "x": 874,
+              "y": 187
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 736,
+              "y": 192
+            },
+            "resolvedDistanceFromArrowTargetPx": 138.1,
+            "clampReasons": [
+              "grid",
+              "route-core",
+              "outer-hard-hud"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 216.1,
+              "minimumInnerRouteDistancePx": 168.1,
+              "centerBreachDistancePx": 967.4,
+              "minimumInnerBreachDistancePx": 919.4,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [
+                "TOP"
+              ],
+              "visualBufferConflicts": [
+                "TOP"
+              ]
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 220.8,
+          "minimumInnerRouteDistancePx": 172.8,
+          "centerBreachDistancePx": 1002.6,
+          "minimumInnerBreachDistancePx": 954.6,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 1440,
+            "y": 320
+          },
+          "asset": {
+            "x": 2080,
+            "y": 380
+          },
+          "art": "右上白玉云台",
+          "risk": "可复用现有平台语言",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 254.2,
+          "minimumInnerRouteDistancePx": 206.2,
+          "centerBreachDistancePx": 882.4,
+          "minimumInnerBreachDistancePx": 834.4,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 256,
+            "y": 608
+          },
+          "asset": {
+            "x": 896,
+            "y": 668
+          },
+          "art": "左侧悬挑白玉台",
+          "risk": "必须增加支撑与台阶",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 294.2,
+          "minimumInnerRouteDistancePx": 246.2,
+          "centerBreachDistancePx": 983.9,
+          "minimumInnerBreachDistancePx": 935.9,
+          "visualBufferConflicts": [
+            "LEFT_SHORTCUT"
+          ]
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 1152,
+            "y": 608
+          },
+          "asset": {
+            "x": 1792,
+            "y": 668
+          },
+          "art": "中段东侧白玉云台",
+          "risk": "按标注左移并停在道路禁建带右缘",
+          "adjustment": {
+            "from": {
+              "x": 1536,
+              "y": 608
+            },
+            "arrowTarget": {
+              "x": 913,
+              "y": 621
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 1152,
+              "y": 608
+            },
+            "resolvedDistanceFromArrowTargetPx": 239.4,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 188,
+              "minimumInnerRouteDistancePx": 140,
+              "centerBreachDistancePx": 538.9,
+              "minimumInnerBreachDistancePx": 490.9,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 225,
+          "minimumInnerRouteDistancePx": 177,
+          "centerBreachDistancePx": 525.7,
+          "minimumInnerBreachDistancePx": 477.7,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 448,
+            "y": 928
+          },
+          "asset": {
+            "x": 1088,
+            "y": 988
+          },
+          "art": "左下悬挑白玉台",
+          "risk": "必须增加支撑与台阶",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 247.5,
+          "minimumInnerRouteDistancePx": 199.5,
+          "centerBreachDistancePx": 673,
+          "minimumInnerBreachDistancePx": 625,
+          "visualBufferConflicts": [
+            "PREPARATION"
+          ]
+        },
+        {
+          "id": "T6",
+          "world": {
+            "x": 1376,
+            "y": 736
+          },
+          "asset": {
+            "x": 2016,
+            "y": 796
+          },
+          "art": "右下近路白玉云台",
+          "risk": "按标注左上移并停在道路禁建带右缘",
+          "adjustment": {
+            "from": {
+              "x": 1600,
+              "y": 864
+            },
+            "arrowTarget": {
+              "x": 1316,
+              "y": 789
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 1376,
+              "y": 736
+            },
+            "resolvedDistanceFromArrowTargetPx": 80.1,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 144.6,
+              "minimumInnerRouteDistancePx": 96.6,
+              "centerBreachDistancePx": 409.1,
+              "minimumInnerBreachDistancePx": 361.1,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 223.5,
+          "minimumInnerRouteDistancePx": 175.5,
+          "centerBreachDistancePx": 486.9,
+          "minimumInnerBreachDistancePx": 438.9,
+          "visualBufferConflicts": []
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 1440,
+            "y": 320
+          },
+          "onGrid": true,
+          "routeDistance": 254.15718815067927,
+          "breachDistance": 882.3831367382312,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 736,
+            "y": 192
+          },
+          "onGrid": true,
+          "routeDistance": 220.7713749560844,
+          "breachDistance": 1002.5766803591632,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 1152,
+            "y": 608
+          },
+          "onGrid": true,
+          "routeDistance": 224.98639958895293,
+          "breachDistance": 525.669097436781,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 4,
+          "point": {
+            "x": 256,
+            "y": 608
+          },
+          "onGrid": true,
+          "routeDistance": 294.2447960457415,
+          "breachDistance": 983.8902377806174,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_06",
+      "name": "太初蜃庭",
+      "file": "stage-06-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-06/background/STAGE_06_BACKGROUND.jpg",
+        "sha256": "ba6e4cb2d2f922bc8e1a2e0e72496cb441e750db15699a31faf671a1e3a5044f",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_06_MIRAGE_COURT"
+      ],
+      "maximumActiveTowers": 4,
+      "outerRadius": {
+        "x": 112,
+        "y": 88
+      },
+      "innerRadius": {
+        "x": 48,
+        "y": 48
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 384,
+            "y": 288
+          },
+          "asset": {
+            "x": 1024,
+            "y": 348
+          },
+          "art": "左上壳质塔台",
+          "risk": "现有圆盘需左移重绘",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 274.6,
+          "minimumInnerRouteDistancePx": 226.6,
+          "centerBreachDistancePx": 952.8,
+          "minimumInnerBreachDistancePx": 904.8,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 1536,
+            "y": 256
+          },
+          "asset": {
+            "x": 2176,
+            "y": 316
+          },
+          "art": "右上壳质塔台",
+          "risk": "低",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 283,
+          "minimumInnerRouteDistancePx": 235,
+          "centerBreachDistancePx": 1123.5,
+          "minimumInnerBreachDistancePx": 1075.5,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 800,
+            "y": 608
+          },
+          "asset": {
+            "x": 1440,
+            "y": 668
+          },
+          "art": "左中近路壳质塔台",
+          "risk": "按标注右移并停在道路禁建带左缘",
+          "adjustment": {
+            "from": {
+              "x": 384,
+              "y": 640
+            },
+            "arrowTarget": {
+              "x": 935,
+              "y": 624
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 800,
+              "y": 608
+            },
+            "resolvedDistanceFromArrowTargetPx": 135.9,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 176.1,
+              "minimumInnerRouteDistancePx": 128.1,
+              "centerBreachDistancePx": 516.8,
+              "minimumInnerBreachDistancePx": 468.8,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 219.5,
+          "minimumInnerRouteDistancePx": 171.5,
+          "centerBreachDistancePx": 522.9,
+          "minimumInnerBreachDistancePx": 474.9,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 1728,
+            "y": 448
+          },
+          "asset": {
+            "x": 2368,
+            "y": 508
+          },
+          "art": "右侧骨壳悬台",
+          "risk": "需要悬挑支架",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 307.7,
+          "minimumInnerRouteDistancePx": 259.7,
+          "centerBreachDistancePx": 1127.6,
+          "minimumInnerBreachDistancePx": 1079.6,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 352,
+            "y": 960
+          },
+          "asset": {
+            "x": 992,
+            "y": 1020
+          },
+          "art": "左下壳质塔台",
+          "risk": "强化承重面",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 348,
+          "minimumInnerRouteDistancePx": 300,
+          "centerBreachDistancePx": 507.3,
+          "minimumInnerBreachDistancePx": 459.3,
+          "visualBufferConflicts": [
+            "LEFT_SHORTCUT",
+            "BOTTOM_LEFT"
+          ]
+        },
+        {
+          "id": "T6",
+          "world": {
+            "x": 1632,
+            "y": 768
+          },
+          "asset": {
+            "x": 2272,
+            "y": 828
+          },
+          "art": "右中外侧壳质塔台",
+          "risk": "按标注右上移至道路外缘",
+          "adjustment": {
+            "from": {
+              "x": 1408,
+              "y": 1024
+            },
+            "arrowTarget": {
+              "x": 1611,
+              "y": 753
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 1632,
+              "y": 768
+            },
+            "resolvedDistanceFromArrowTargetPx": 25.8,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 209.8,
+              "minimumInnerRouteDistancePx": 161.8,
+              "centerBreachDistancePx": 867.2,
+              "minimumInnerBreachDistancePx": 819.2,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 234.6,
+          "minimumInnerRouteDistancePx": 186.6,
+          "centerBreachDistancePx": 879.9,
+          "minimumInnerBreachDistancePx": 831.9,
+          "visualBufferConflicts": []
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 384,
+            "y": 288
+          },
+          "onGrid": true,
+          "routeDistance": 274.5541840875859,
+          "breachDistance": 952.8273715631809,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 800,
+            "y": 608
+          },
+          "onGrid": true,
+          "routeDistance": 219.46206961568552,
+          "breachDistance": 522.8613582968242,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 1728,
+            "y": 448
+          },
+          "onGrid": true,
+          "routeDistance": 307.7466490475567,
+          "breachDistance": 1127.6205035383136,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 4,
+          "point": {
+            "x": 1536,
+            "y": 256
+          },
+          "onGrid": true,
+          "routeDistance": 282.96996307028775,
+          "breachDistance": 1123.5265906955651,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_07",
+      "name": "山河残卷",
+      "file": "stage-07-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-07/background/STAGE_07_BACKGROUND.jpg",
+        "sha256": "90faf6b4c69f3aa03943ceba3b7ed5e6cfa5c09e4342232d15e7a5cb71fe8a5a",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_07_BROKEN_SCROLL"
+      ],
+      "maximumActiveTowers": 4,
+      "outerRadius": {
+        "x": 112,
+        "y": 88
+      },
+      "innerRadius": {
+        "x": 48,
+        "y": 48
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 960,
+            "y": 192
+          },
+          "asset": {
+            "x": 1600,
+            "y": 252
+          },
+          "art": "北侧墨阵砚台",
+          "risk": "按标注左移至上段路线北侧",
+          "adjustment": {
+            "from": {
+              "x": 1472,
+              "y": 256
+            },
+            "arrowTarget": {
+              "x": 920,
+              "y": 237
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 960,
+              "y": 192
+            },
+            "resolvedDistanceFromArrowTargetPx": 60.2,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 158.5,
+              "minimumInnerRouteDistancePx": 110.5,
+              "centerBreachDistancePx": 939.7,
+              "minimumInnerBreachDistancePx": 891.7,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": [
+                "TOP"
+              ]
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 218.7,
+          "minimumInnerRouteDistancePx": 170.7,
+          "centerBreachDistancePx": 973.2,
+          "minimumInnerBreachDistancePx": 925.2,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 1408,
+            "y": 352
+          },
+          "asset": {
+            "x": 2048,
+            "y": 412
+          },
+          "art": "东北墨阵砚台",
+          "risk": "按标注左移并避开卷轴裂口",
+          "adjustment": {
+            "from": {
+              "x": 1760,
+              "y": 448
+            },
+            "arrowTarget": {
+              "x": 1384,
+              "y": 397
+            },
+            "targetTolerancePx": 32,
+            "note": "箭头头部较宽，目标记录为纵向范围中点",
+            "resolved": {
+              "x": 1408,
+              "y": 352
+            },
+            "resolvedDistanceFromArrowTargetPx": 51,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 176.1,
+              "minimumInnerRouteDistancePx": 128.1,
+              "centerBreachDistancePx": 770.5,
+              "minimumInnerBreachDistancePx": 722.5,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 227.1,
+          "minimumInnerRouteDistancePx": 179.1,
+          "centerBreachDistancePx": 820.3,
+          "minimumInnerBreachDistancePx": 772.3,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 1760,
+            "y": 832
+          },
+          "asset": {
+            "x": 2400,
+            "y": 892
+          },
+          "art": "右下墨阵砚台",
+          "risk": "避开卷轴裂口",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 284.8,
+          "minimumInnerRouteDistancePx": 236.8,
+          "centerBreachDistancePx": 656.7,
+          "minimumInnerBreachDistancePx": 608.7,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 352,
+            "y": 704
+          },
+          "asset": {
+            "x": 992,
+            "y": 764
+          },
+          "art": "左中墨阵砚台",
+          "risk": "接近现左下合法点",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 254.9,
+          "minimumInnerRouteDistancePx": 206.9,
+          "centerBreachDistancePx": 935.8,
+          "minimumInnerBreachDistancePx": 887.8,
+          "visualBufferConflicts": [
+            "LEFT_SHORTCUT"
+          ]
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 672,
+            "y": 544
+          },
+          "asset": {
+            "x": 1312,
+            "y": 604
+          },
+          "art": "西侧近路墨阵砚台",
+          "risk": "按标注右上移至中段路线西侧",
+          "adjustment": {
+            "from": {
+              "x": 448,
+              "y": 1024
+            },
+            "arrowTarget": {
+              "x": 694,
+              "y": 538
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 672,
+              "y": 544
+            },
+            "resolvedDistanceFromArrowTargetPx": 22.8,
+            "clampReasons": [
+              "grid",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": true,
+              "centerRouteDistancePx": 197.7,
+              "minimumInnerRouteDistancePx": 149.7,
+              "centerBreachDistancePx": 773.7,
+              "minimumInnerBreachDistancePx": 725.7,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 219.8,
+          "minimumInnerRouteDistancePx": 171.8,
+          "centerBreachDistancePx": 783.1,
+          "minimumInnerBreachDistancePx": 735.1,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T6",
+          "world": {
+            "x": 800,
+            "y": 864
+          },
+          "asset": {
+            "x": 1440,
+            "y": 924
+          },
+          "art": "下中墨阵砚台",
+          "risk": "承接现有下方砚台语言",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 353.6,
+          "minimumInnerRouteDistancePx": 305.6,
+          "centerBreachDistancePx": 469.7,
+          "minimumInnerBreachDistancePx": 421.7,
+          "visualBufferConflicts": [
+            "PREPARATION"
+          ]
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 1408,
+            "y": 352
+          },
+          "onGrid": true,
+          "routeDistance": 227.06412672868169,
+          "breachDistance": 820.3218880415176,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 1760,
+            "y": 832
+          },
+          "onGrid": true,
+          "routeDistance": 284.78764018124104,
+          "breachDistance": 656.7069361595018,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 800,
+            "y": 864
+          },
+          "onGrid": true,
+          "routeDistance": 353.63257768480554,
+          "breachDistance": 469.65519266798276,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 4,
+          "point": {
+            "x": 352,
+            "y": 704
+          },
+          "onGrid": true,
+          "routeDistance": 254.85751439743004,
+          "breachDistance": 935.7777513918569,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    },
+    {
+      "stageId": "STAGE_08",
+      "name": "无尽潮渊",
+      "file": "stage-08-tower-layout-guide.png",
+      "background": {
+        "path": "assets/stage-08/background/STAGE_08_BACKGROUND.jpg",
+        "sha256": "c08fe3543f4e1fd85fc4211eae85519bbf9573d73560a98a72ccf4a35f651aff",
+        "width": 3200,
+        "height": 1440,
+        "worldRect": {
+          "x": -640,
+          "y": -60,
+          "width": 3200,
+          "height": 1440
+        }
+      },
+      "routeIds": [
+        "ROUTE_STAGE_08_ABYSS_A",
+        "ROUTE_STAGE_08_ABYSS_B",
+        "ROUTE_STAGE_08_ABYSS_C"
+      ],
+      "maximumActiveTowers": 6,
+      "outerRadius": {
+        "x": 104,
+        "y": 76
+      },
+      "innerRadius": {
+        "x": 48,
+        "y": 48
+      },
+      "candidates": [
+        {
+          "id": "T1",
+          "world": {
+            "x": 576,
+            "y": 192
+          },
+          "asset": {
+            "x": 1216,
+            "y": 252
+          },
+          "art": "北侧悬挑堡台",
+          "risk": "必须与桥体连接",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 286.6,
+          "minimumInnerRouteDistancePx": 238.6,
+          "centerBreachDistancePx": 1557,
+          "minimumInnerBreachDistancePx": 1509,
+          "visualBufferConflicts": [
+            "TOP"
+          ]
+        },
+        {
+          "id": "T2",
+          "world": {
+            "x": 288,
+            "y": 704
+          },
+          "asset": {
+            "x": 928,
+            "y": 764
+          },
+          "art": "西南悬挑堡台",
+          "risk": "必须增加桥墩和短支路",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 230.8,
+          "minimumInnerRouteDistancePx": 182.8,
+          "centerBreachDistancePx": 1630.9,
+          "minimumInnerBreachDistancePx": 1582.9,
+          "visualBufferConflicts": [
+            "LEFT_SHORTCUT"
+          ]
+        },
+        {
+          "id": "T3",
+          "world": {
+            "x": 800,
+            "y": 352
+          },
+          "asset": {
+            "x": 1440,
+            "y": 412
+          },
+          "art": "北侧悬挑堡台",
+          "risk": "必须与桥体连接",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 251.2,
+          "minimumInnerRouteDistancePx": 203.2,
+          "centerBreachDistancePx": 1282.1,
+          "minimumInnerBreachDistancePx": 1234.1,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T4",
+          "world": {
+            "x": 544,
+            "y": 832
+          },
+          "asset": {
+            "x": 1184,
+            "y": 892
+          },
+          "art": "西南悬挑堡台",
+          "risk": "必须增加桥墩和短支路",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 229.8,
+          "minimumInnerRouteDistancePx": 181.8,
+          "centerBreachDistancePx": 1356.3,
+          "minimumInnerBreachDistancePx": 1308.3,
+          "visualBufferConflicts": [
+            "PREPARATION"
+          ]
+        },
+        {
+          "id": "T5",
+          "world": {
+            "x": 1088,
+            "y": 384
+          },
+          "asset": {
+            "x": 1728,
+            "y": 444
+          },
+          "art": "北侧悬挑堡台",
+          "risk": "必须与桥体连接",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 326.3,
+          "minimumInnerRouteDistancePx": 278.3,
+          "centerBreachDistancePx": 1029.1,
+          "minimumInnerBreachDistancePx": 981.1,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T6",
+          "world": {
+            "x": 96,
+            "y": 544
+          },
+          "asset": {
+            "x": 736,
+            "y": 604
+          },
+          "art": "西侧入口堡台",
+          "risk": "按标注左上移，并截停在当前塔心建造边界与三路禁建带之外",
+          "adjustment": {
+            "from": {
+              "x": 288,
+              "y": 1024
+            },
+            "arrowTarget": {
+              "x": 32,
+              "y": 359
+            },
+            "targetTolerancePx": 24,
+            "resolved": {
+              "x": 96,
+              "y": 544
+            },
+            "resolvedDistanceFromArrowTargetPx": 195.8,
+            "clampReasons": [
+              "grid",
+              "build-zone",
+              "route-core"
+            ],
+            "arrowTargetValidation": {
+              "onGrid": false,
+              "buildZoneCenter": false,
+              "centerRouteDistancePx": 184.6,
+              "minimumInnerRouteDistancePx": 136.6,
+              "centerBreachDistancePx": 1972.5,
+              "minimumInnerBreachDistancePx": 1924.5,
+              "innerHardHudClear": true,
+              "outerHardHudConflicts": [],
+              "visualBufferConflicts": []
+            }
+          },
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 231.6,
+          "minimumInnerRouteDistancePx": 183.6,
+          "centerBreachDistancePx": 1855.2,
+          "minimumInnerBreachDistancePx": 1807.2,
+          "visualBufferConflicts": [
+            "LEFT_SHORTCUT"
+          ]
+        },
+        {
+          "id": "T7",
+          "world": {
+            "x": 1440,
+            "y": 480
+          },
+          "asset": {
+            "x": 2080,
+            "y": 540
+          },
+          "art": "东侧悬挑堡台",
+          "risk": "必须与桥体连接",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 329.8,
+          "minimumInnerRouteDistancePx": 281.8,
+          "centerBreachDistancePx": 708,
+          "minimumInnerBreachDistancePx": 660,
+          "visualBufferConflicts": []
+        },
+        {
+          "id": "T8",
+          "world": {
+            "x": 1760,
+            "y": 608
+          },
+          "asset": {
+            "x": 2400,
+            "y": 668
+          },
+          "art": "东侧终段堡台",
+          "risk": "靠近关印但安全",
+          "adjustment": null,
+          "buildZoneCenterValid": true,
+          "centerRouteDistancePx": 296.2,
+          "minimumInnerRouteDistancePx": 248.2,
+          "centerBreachDistancePx": 426.2,
+          "minimumInnerBreachDistancePx": 378.2,
+          "visualBufferConflicts": []
+        }
+      ],
+      "currentAnchors": [
+        {
+          "index": 1,
+          "point": {
+            "x": 800,
+            "y": 352
+          },
+          "onGrid": true,
+          "routeDistance": 251.16410212188023,
+          "breachDistance": 1282.0741008225696,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 2,
+          "point": {
+            "x": 1088,
+            "y": 384
+          },
+          "onGrid": true,
+          "routeDistance": 326.32602572116787,
+          "breachDistance": 1029.0821152852673,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        },
+        {
+          "index": 3,
+          "point": {
+            "x": 1440,
+            "y": 480
+          },
+          "onGrid": true,
+          "routeDistance": 329.84845004941286,
+          "breachDistance": 707.9901129253147,
+          "hardHud": false,
+          "buildZone": true,
+          "valid": true
+        }
+      ]
+    }
+  ]
+}

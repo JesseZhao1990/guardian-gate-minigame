@@ -333,12 +333,12 @@ const stageCases = [
   {
     bundle: createStage02Bundle(),
     releaseId: 'GG_S02_ALPHA_V5',
-    hp: [7_000, 11_000, 19_000, 32_000, 42_000],
+    hp: [7_000, 11_000, 19_000, 32_000, 41_000],
   },
   {
     bundle: createStage03Bundle(),
     releaseId: 'GG_S03_ALPHA_V4',
-    hp: [6_500, 13_000, 25_000, 40_000, 59_800],
+    hp: [6_500, 13_000, 25_000, 40_000, 64_100],
   },
   {
     bundle: createStage04Bundle(),

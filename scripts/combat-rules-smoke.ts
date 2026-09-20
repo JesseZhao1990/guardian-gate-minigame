@@ -585,6 +585,15 @@ assert.ok(
     renderedTexts.some((text) => text.includes('自由布阵')),
   'Preparation must retain compact automatic-start and free-placement guidance.',
 );
+assert.ok(
+  !renderedTexts.some((text) => text.includes('关印 ·')),
+  'Preparation must hide the world-space breach label instead of letting it peek through the control panel.',
+);
+assert.ok(
+  renderedTexts.some((text) => text.includes('塔战策 · 已选')) &&
+    !renderedTexts.some((text) => text.includes('迎敌后可查看')),
+  'Preparation must keep the strategy title without painting an unavailable hint over it.',
+);
 
 const spawnVisualSimulation = createBattleSimulation(createStage01Bundle(), 0x5a17_0001);
 startPreparedWave(spawnVisualSimulation);

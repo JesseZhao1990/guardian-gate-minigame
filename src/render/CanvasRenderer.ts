@@ -969,6 +969,33 @@ export function resolveBreachSealPlacement(
   };
 }
 
+/**
+ * Conservative design-space bounds for the asymmetric breach artwork.
+ *
+ * The seal is 126px wide because of its aura, but it is not a 126px-radius
+ * circle: its lower edge is made from a shallow ellipse plus a route-aligned
+ * spine. Keeping a tangent-aware bottom extent lets a deliberately off-board
+ * route endpoint remain visually complete without weakening the side-HUD
+ * exclusion check.
+ */
+export function resolveBreachSealVisualExtents(
+  route: BattleBundleV1['route'],
+): Readonly<{ horizontal: number; top: number; bottom: number }> {
+  const { tangentRadians } = resolveBreachSealPlacement(route);
+  const sin = Math.abs(Math.sin(tangentRadians));
+  const cos = Math.abs(Math.cos(tangentRadians));
+  const rotatedEllipseBottom =
+    8 * Math.cos(tangentRadians) + Math.hypot(102 * sin, 34 * cos);
+  const segmentedArcBottom = Math.hypot(98 * sin, 34 * cos) + 8;
+  const spineBottom = 78 * cos + 7;
+  const diamondBottom = 76 * cos + 12 * Math.max(sin, cos) + 3;
+  return {
+    horizontal: BREACH_SEAL_VISUAL_RADIUS,
+    top: BREACH_SEAL_VISUAL_RADIUS,
+    bottom: Math.ceil(Math.max(54, rotatedEllipseBottom, segmentedArcBottom, spineBottom, diamondBottom)),
+  };
+}
+
 const PROJECTILE_PALETTES = [
   { feather: '#f0b95a', trail: 'rgba(240,185,90,.30)' },
   { feather: '#53ddd7', trail: 'rgba(83,221,215,.30)' },
@@ -2622,7 +2649,7 @@ export class CanvasRenderer {
       state.aimPoint,
       state.towerPlacement,
     );
-    this.drawBreachSeal();
+    this.drawBreachSeal(state.hud.flowState !== 'preparing');
     const effectFrameTime = Date.now();
     this.drawEffects('ground', effectFrameTime);
     this.drawTowers(displayedTowerFacings, state.selectedTowerId, state.towerPlacement);
@@ -2793,7 +2820,7 @@ export class CanvasRenderer {
     this.context.translate(-BATTLE_WORLD_PIVOT.x, -BATTLE_WORLD_PIVOT.y);
   }
 
-  private drawBreachSeal(): void {
+  private drawBreachSeal(showLabel = true): void {
     const placement = resolveBreachSealPlacement(this.bundle.route);
     const theme = BATTLE_STAGE_THEME[this.bundle.stage.id];
     const now = Date.now();
@@ -2887,17 +2914,19 @@ export class CanvasRenderer {
     this.context.restore();
 
     this.drawBreachCrest(theme, pulse);
-    this.pill(
-      -83,
-      -99,
-      166,
-      30,
-      `关印 · ${theme.breachLabel}`,
-      'rgba(3, 14, 29, .90)',
-      gateFlash > 0 ? '#ff8a72' : theme.accent,
-      15,
-      9,
-    );
+    if (showLabel) {
+      this.pill(
+        -83,
+        -99,
+        166,
+        30,
+        `关印 · ${theme.breachLabel}`,
+        'rgba(3, 14, 29, .90)',
+        gateFlash > 0 ? '#ff8a72' : theme.accent,
+        15,
+        9,
+      );
+    }
     this.context.restore();
   }
 
@@ -4153,8 +4182,10 @@ export class CanvasRenderer {
       this.progressBar(502, 76, 226, 10, gateRatio, gateColor);
     }
 
+    const wavePanelX = endlessHud ? 780 : 850;
+    const wavePanelWidth = endlessHud ? 360 : 290;
     this.context.fillStyle = 'rgba(6, 20, 40, .9)';
-    this.roundRect(780, 22, 360, 100, 24);
+    this.roundRect(wavePanelX, 22, wavePanelWidth, 100, 24);
     this.context.fill();
     this.context.save();
     this.context.globalAlpha = .62;
@@ -4169,9 +4200,9 @@ export class CanvasRenderer {
       const waveLabel = speedMultiplierBp > 10_000
         ? `疾潮 +${Math.round((speedMultiplierBp - 10_000) / 100)}%`
         : '敌潮';
-      this.text(waveLabel, 825, 61, 18, theme.accent, 'left', 650);
-      this.text(`${Math.max(1, hud.waveIndex)} / ${hud.waveCount}`, 1085, 67, 30, '#f4dfad', 'right', 750);
-      this.progressBar(825, 84, 270, 10, hud.progressBp / 10_000, theme.secondary);
+      this.text(waveLabel, 875, 61, 18, theme.accent, 'left', 650);
+      this.text(`${Math.max(1, hud.waveIndex)} / ${hud.waveCount}`, 1110, 67, 30, '#f4dfad', 'right', 750);
+      this.progressBar(875, 84, 235, 10, hud.progressBp / 10_000, theme.secondary);
     }
 
     const controlsRight = this.resolveHudControlsRight();
@@ -4393,18 +4424,40 @@ export class CanvasRenderer {
     this.context.fill();
     this.context.stroke();
     const recentDpsMilli = towerMetrics.reduce((sum, metric) => sum + metric.damageLast1sMilli, 0);
-    this.text(`${this.activeTowerIds.size} 塔战策 · 已选 ${selectedTowerId + 1} 号`, damageX + 20, 945, 15, theme.accent, 'left', 700, 8);
     const strategyAvailable = hud.flowState !== 'preparing';
-    this.text(
-      strategyAvailable ? '详情  ›' : '迎敌后可查看',
-      damageX + damageWidth - 18,
+    const strategyTitle = `${this.activeTowerIds.size} 塔战策 · 已选 ${selectedTowerId + 1} 号`;
+    const strategyAction = '详情  ›';
+    const strategyFontSize = this.resolveFontSize(15, 8);
+    this.context.font = `${resolveCanvasFontWeight(700)} ${strategyFontSize}px sans-serif`;
+    const strategyActionWidth = strategyAvailable
+      ? this.context.measureText(strategyAction).width
+      : 0;
+    const strategyTitleWidth = damageWidth - 40 - (
+      strategyAvailable ? strategyActionWidth + 12 : 0
+    );
+    this.fitText(
+      strategyTitle,
+      damageX + 20,
       945,
+      strategyTitleWidth,
       15,
-      strategyAvailable ? theme.accent : 'rgba(220,235,231,.38)',
-      'right',
+      theme.accent,
+      'left',
       700,
       8,
     );
+    if (strategyAvailable) {
+      this.text(
+        strategyAction,
+        damageX + damageWidth - 18,
+        945,
+        15,
+        theme.accent,
+        'right',
+        700,
+        8,
+      );
+    }
     this.text('累计伤害', damageX + 20, 977, 13, 'rgba(230,240,237,.52)', 'left', 550, 8);
     this.text(compactDamage(hud.damageDealtMilli), damageX + 20, 1011, 26, theme.secondary, 'left', 760, 10, CARD_NUMBER_FONT);
     this.text('近 1 秒 DPS', damageX + damageWidth - 20, 977, 13, 'rgba(230,240,237,.52)', 'right', 550, 8);
